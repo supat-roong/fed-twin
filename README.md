@@ -148,7 +148,7 @@ The project includes an automated analysis suite that generates insights after e
 - **Federated Learning (Green)** achieves significantly higher rewards by leveraging knowledge from diverse physics
 - **Single Agent (Red)** learns from only one environment, limiting its generalization capability
 - FL demonstrates **better generalization** and more stable growth through collective learning
-- Both can eventually improve, but FL reaches higher performance faster
+- Both models show initial improvement, but single agents stuck at lower performance due to overfitting, whereas **FL reaches higher performance** due to better generalization.
 
 ### 2. Worker Training Dynamics (Worker Diversity)
 
@@ -159,7 +159,7 @@ The project includes an automated analysis suite that generates insights after e
 
 ### 3. Generalization Gap
 
-**Concept**: Measures the difference between a model's performance on its training environment vs. a neutral evaluation environment. A smaller gap indicates that the model has truly learned robust physics policies rather than just memorizing a specific simulation's quirks. Federated learning typically minimizes this gap by forcing the model to solve for multiple physics variations simultaneously.
+**Concept**: Measures the difference between a model's performance on its training environment vs. a neutral evaluation environment. A smaller gap indicates that the model has truly learned robust policies rather than just memorizing a specific condition. Federated learning typically minimizes this gap by forcing the model to solve for multiple physics variations simultaneously.
 
 *   **Analysis Script**: `src/analysis/generalization_gap.py`
 *   **Generated Plot**: `plots/generalization_gap_{type}.png`
