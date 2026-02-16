@@ -1,0 +1,37 @@
+apiVersion: kubeflow.org/v1
+kind: PyTorchJob
+metadata:
+  name: fl-training-round
+  namespace: kubeflow
+spec:
+  pytorchReplicaSpecs:
+    Master:
+      replicas: 1
+      restartPolicy: OnFailure
+      template:
+        spec:
+          containers:
+          - name: pytorch
+            image: fed-twin-app:latest
+            imagePullPolicy: IfNotPresent
+            command: ["python", "server.py"]
+            env:
+            - name: FL_ROUNDS
+              value: "5"
+    Worker:
+      replicas: 3
+      restartPolicy: OnFailure
+      template:
+        spec:
+          containers:
+          - name: pytorch
+            image: fed-twin-app:latest
+            imagePullPolicy: IfNotPresent
+            command: ["python", "client.py"]
+            env:
+            - name: TWIN_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: SERVER_ADDR
+              value: "fl-training-round-master-0:8080"

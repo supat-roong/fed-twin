@@ -1,0 +1,5 @@
+{
+    "fl_rounds": 15,
+    "num_workers": 5,
+    "local_episodes": 30
+}
