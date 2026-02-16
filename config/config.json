@@ -1,8 +1,8 @@
 {
-    "fl_rounds": 2,
-    "num_workers": 2,
-    "local_episodes": 2,
-    "eval_episodes": 2,
+    "fl_rounds": 100,
+    "num_workers": 5,
+    "local_episodes": 50,
+    "eval_episodes": 10,
     "learning_rate": 0.005,
     "gamma": 0.95,
     "entropy_coeff": 0.001,
