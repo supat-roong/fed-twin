@@ -30,5 +30,6 @@ jobs:
     - name: Check formatting (Ruff)
       run: uv run ruff format --check .
 
-    - name: Run tests (Pytest)
-      run: PYTHONPATH=src uv run pytest tests/
+    - name: Run tests (Pytest) with coverage
+      run: |
+        PYTHONPATH=src uv run pytest --cov=src --cov-report=term-missing --cov-fail-under=85 tests/
