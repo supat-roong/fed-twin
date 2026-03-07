@@ -170,7 +170,7 @@ The project includes an automated analysis suite that generates insights after e
 ### 1. Prerequisites
 - **Kubernetes Cluster**: A local cluster like [Kind](https://kind.sigs.k8s.io/) or [Minikube](https://minikube.sigs.k8s.io/).
 - **Container Runtime**: Docker Desktop, Colima, or Podman.
-- **Tools**: `kubectl`, `python 3.10+`, and `pip`.
+- **Tools**: `kubectl`, `python 3.10+`, and `uv`.
 
 ### 2. Automatic Setup (Recommended)
 The provided `run_project.sh` automates the entire lifecycle: environment creation, cluster detection, image building, and pipeline execution.
