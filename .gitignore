@@ -8,3 +8,4 @@ metrics/
 plots/
 *.png
 *.log
+.DS_Store
