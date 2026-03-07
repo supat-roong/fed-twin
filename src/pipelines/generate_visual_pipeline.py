@@ -1,5 +1,5 @@
 import json
-import os
+
 
 def generate_pipeline_code():
     # Load config
@@ -15,7 +15,7 @@ def generate_pipeline_code():
 
     # Generate the argument list for aggregate_models
     agg_args = ", ".join([f"model_{i}: Input[Model]" for i in range(num_workers)])
-    
+
     # Generate the list of paths for aggregation logic
     agg_paths = "[" + ", ".join([f"model_{i}.path" for i in range(num_workers)]) + "]"
 
@@ -24,7 +24,7 @@ def generate_pipeline_code():
     for i in range(num_workers):
         pipeline_tasks += f"""
         t{i} = train_twin(
-            twin_id="train-twin-{i+1}", 
+            twin_id="train-twin-{i + 1}", 
             input_model=current_model, 
             local_episodes={local_episodes},
             round_num=r
@@ -32,7 +32,9 @@ def generate_pipeline_code():
 """
 
     # Generate the aggregation call
-    agg_call_args = ", ".join([f"model_{i}=t{i}.outputs['output_model']" for i in range(num_workers)])
+    agg_call_args = ", ".join(
+        [f"model_{i}=t{i}.outputs['output_model']" for i in range(num_workers)]
+    )
 
     code = f"""from kfp import dsl
 from kfp import compiler
@@ -189,11 +191,12 @@ def visual_fl_pipeline():
 if __name__ == "__main__":
     compiler.Compiler().compile(visual_fl_pipeline, "pipeline_specs/fl_visual_pipeline.yaml")
 """
-    
+
     with open("src/pipelines/fl_visual_pipeline.py", "w") as f:
         f.write(code)
-    
+
     print("Generated src/pipelines/fl_visual_pipeline.py")
+
 
 if __name__ == "__main__":
     generate_pipeline_code()

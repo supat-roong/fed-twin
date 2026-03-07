@@ -1,6 +1,6 @@
 from kfp import dsl
 from kfp import compiler
-from kfp.dsl import Input, Output, Model, Artifact
+from kfp.dsl import Output, Artifact
 import json
 
 # Reuse config if available, or defaults
@@ -12,19 +12,18 @@ except FileNotFoundError:
 
 print(f"Compiling Single-Twin-FL Pipeline with Config: {config}")
 
+
 @dsl.component(
-    base_image='python:3.9-slim',
-    packages_to_install=['jinja2', 'requests', 'pyyaml']
+    base_image="python:3.9-slim", packages_to_install=["jinja2", "requests", "pyyaml"]
 )
 def train_single_twin(
-    namespace: str, 
-    fl_rounds: int, 
+    namespace: str,
+    fl_rounds: int,
     local_episodes: int,
     eval_episodes: int,
     job_id: str,
-    metrics: Output[Artifact]
+    metrics: Output[Artifact],
 ):
-    import yaml
     import os
     import subprocess
     import requests
@@ -40,7 +39,7 @@ def train_single_twin(
         with open(kubectl_path, "wb") as f:
             f.write(response.content)
         os.chmod(kubectl_path, 0o755)
-    
+
     pytorch_job_template = """
 apiVersion: kubeflow.org/v1
 kind: PyTorchJob
@@ -102,7 +101,7 @@ spec:
             - name: MAX_GRAD_NORM
               value: "{{ max_grad_norm }}"
     """
-    
+
     job_name = f"single-job-{job_id}"
     template = Template(pytorch_job_template)
     manifest = template.render(
@@ -114,126 +113,179 @@ spec:
         learning_rate=0.003,  # Increased for better convergence
         gamma=0.99,
         entropy_coeff=0.01,
-        max_grad_norm=0.5
+        max_grad_norm=0.5,
     )
-    
+
     with open("/tmp/job.yaml", "w") as f:
         f.write(manifest)
-        
+
     print(f"Deploying Single Twin (via FL logic) for {fl_rounds} rounds...")
-    subprocess.run([kubectl_path, "apply", "-f", "/tmp/job.yaml", "--force"], check=True)
+    subprocess.run(
+        [kubectl_path, "apply", "-f", "/tmp/job.yaml", "--force"], check=True
+    )
 
     # Start streaming logs immediately - don't wait for pods to be ready
     print(f"Starting log stream for job {job_name}...")
     time.sleep(5)  # Brief wait for pods to start being created
-    
+
     # Prepare CSV
-    with open(metrics.path, 'w', newline='') as f:
+    with open(metrics.path, "w", newline="") as f:
         writer = csv.writer(f)
-        writer.writerow(['round', 'twin_id', 'mode', 'reward', 'loss'])
-    
-    metric_pattern = re.compile(r"Twin ([\w-]+)\s+\[Round (\d+)\]\s+\[METRIC\]\s+(\S+)\s+Reward:\s+([-\d.]+)\s+Loss:\s+([-\d.]+)")
-    
-    cmd = [kubectl_path, "logs", "-l", f"training.kubeflow.org/job-name={job_name}", "-n", namespace, "--all-containers", "--prefix=true", "--tail=-1", "-f"]
-    process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-    
+        writer.writerow(["round", "twin_id", "mode", "reward", "loss"])
+
+    metric_pattern = re.compile(
+        r"Twin ([\w-]+)\s+\[Round (\d+)\]\s+\[METRIC\]\s+(\S+)\s+Reward:\s+([-\d.]+)\s+Loss:\s+([-\d.]+)"
+    )
+
+    cmd = [
+        kubectl_path,
+        "logs",
+        "-l",
+        f"training.kubeflow.org/job-name={job_name}",
+        "-n",
+        namespace,
+        "--all-containers",
+        "--prefix=true",
+        "--tail=-1",
+        "-f",
+    ]
+    process = subprocess.Popen(
+        cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
+    )
+
     start_time = time.time()
     last_check_time = 0
     metric_count = 0
-    
+
     # Calculate expected duration: rounds * (train + eval episodes) * ~5 sec per episode
     # Add 50% buffer for safety
     expected_duration = int(fl_rounds * (local_episodes + eval_episodes) * 5 * 1.5)
     timeout = max(3600, expected_duration)  # At least 1 hour, or calculated duration
-    print(f"Timeout set to {timeout} seconds (~{timeout//60} minutes) based on {fl_rounds} rounds")
-    
+    print(
+        f"Timeout set to {timeout} seconds (~{timeout // 60} minutes) based on {fl_rounds} rounds"
+    )
+
     job_completed = False
-    
+
     try:
         for line in process.stdout:
             elapsed = time.time() - start_time
             if elapsed > timeout:
                 print(f"⚠️ Timeout reached after {elapsed:.0f} seconds")
                 break
-            
+
             match = metric_pattern.search(line)
             if match:
                 twin_id, rd, mode, reward, loss = match.groups()
-                csv_mode = 'EVAL' if 'EVAL' in mode else 'TRAIN'
-                if mode == 'EVAL-ONLY-SKIP':
+                csv_mode = "EVAL" if "EVAL" in mode else "TRAIN"
+                if mode == "EVAL-ONLY-SKIP":
                     continue
-                
+
                 metric_count += 1
                 if metric_count % 10 == 0 or metric_count <= 5:
-                    print(f"✓ Metric #{metric_count}: R={rd}, Twin={twin_id}, Mode={mode}, Rew={reward}")
-                with open(metrics.path, 'a', newline='') as f:
+                    print(
+                        f"✓ Metric #{metric_count}: R={rd}, Twin={twin_id}, Mode={mode}, Rew={reward}"
+                    )
+                with open(metrics.path, "a", newline="") as f:
                     csv.writer(f).writerow([rd, twin_id, csv_mode, reward, loss])
-            
+
             # Check if job finished every 10 seconds
             current_time = time.time()
             if current_time - last_check_time >= 10:
                 last_check_time = current_time
-                
+
                 # Check both job status AND pod phases
                 job_res = subprocess.run(
-                    [kubectl_path, "get", "pytorchjob", job_name, "-n", namespace, 
-                     "-o", "jsonpath={.status.conditions[?(@.type=='Succeeded')].status}"],
-                    capture_output=True, text=True
+                    [
+                        kubectl_path,
+                        "get",
+                        "pytorchjob",
+                        job_name,
+                        "-n",
+                        namespace,
+                        "-o",
+                        "jsonpath={.status.conditions[?(@.type=='Succeeded')].status}",
+                    ],
+                    capture_output=True,
+                    text=True,
                 )
-                
+
                 pods_res = subprocess.run(
-                    [kubectl_path, "get", "pods", "-l", f"training.kubeflow.org/job-name={job_name}",
-                     "-n", namespace, "-o", "jsonpath={.items[*].status.phase}"],
-                    capture_output=True, text=True
+                    [
+                        kubectl_path,
+                        "get",
+                        "pods",
+                        "-l",
+                        f"training.kubeflow.org/job-name={job_name}",
+                        "-n",
+                        namespace,
+                        "-o",
+                        "jsonpath={.items[*].status.phase}",
+                    ],
+                    capture_output=True,
+                    text=True,
                 )
-                
+
                 # Job is complete when status is Succeeded AND all pods are in terminal state
                 if "True" in job_res.stdout:
                     pod_phases = pods_res.stdout.split()
-                    all_terminal = all(phase in ["Succeeded", "Failed"] for phase in pod_phases)
-                    
+                    all_terminal = all(
+                        phase in ["Succeeded", "Failed"] for phase in pod_phases
+                    )
+
                     if all_terminal:
-                        print(f"✅ Job completed successfully. Waiting for final logs... ({metric_count} metrics captured)")
+                        print(
+                            f"✅ Job completed successfully. Waiting for final logs... ({metric_count} metrics captured)"
+                        )
                         job_completed = True
                         # Extended grace period to ensure all logs are flushed
                         time.sleep(30)
                         break
                     else:
-                        print(f"Job marked Succeeded but pods still running: {pod_phases}. Continuing to stream...")
+                        print(
+                            f"Job marked Succeeded but pods still running: {pod_phases}. Continuing to stream..."
+                        )
     finally:
         process.terminate()
         print(f"Log streaming finished. Total metrics captured: {metric_count}")
-        
+
         if not job_completed:
             print("⚠️ Warning: Log streaming ended before job completion was confirmed")
-        
+
         # Final verification: check if we got expected number of metrics
         expected_metrics = fl_rounds * 2  # Each round has TRAIN + EVAL
         if metric_count < expected_metrics * 0.8:  # Allow 20% tolerance
-            print(f"⚠️ Warning: Only captured {metric_count}/{expected_metrics} expected metrics")
-    
+            print(
+                f"⚠️ Warning: Only captured {metric_count}/{expected_metrics} expected metrics"
+            )
+
     print("Training job finished.")
+
 
 @dsl.pipeline(
     name="Single Twin Pipeline",
-    description="Runs single twin training using the Federated architecture (1 client)."
+    description="Runs single twin training using the Federated architecture (1 client).",
 )
 def single_twin_pipeline(
-    namespace: str = "kubeflow", 
+    namespace: str = "kubeflow",
     fl_rounds: int = config.get("fl_rounds", 10),
     local_episodes: int = config.get("local_episodes", 10),
-    eval_episodes: int = config.get("eval_episodes", 20)
+    eval_episodes: int = config.get("eval_episodes", 20),
 ):
     import time
+
     job_id = str(int(time.time()))
 
-    train_op = train_single_twin(
-        namespace=namespace, 
+    train_single_twin(
+        namespace=namespace,
         fl_rounds=fl_rounds,
         local_episodes=local_episodes,
         eval_episodes=eval_episodes,
-        job_id=job_id
+        job_id=job_id,
     )
 
+
 if __name__ == "__main__":
-    compiler.Compiler().compile(single_twin_pipeline, "pipeline_specs/single_pipeline.yaml")
+    compiler.Compiler().compile(
+        single_twin_pipeline, "pipeline_specs/single_pipeline.yaml"
+    )
