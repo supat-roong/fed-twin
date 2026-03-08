@@ -1,6 +1,7 @@
 import os
 import flwr as fl
 from engine import PolicyNet, DigitalTwinEnv, get_parameters, set_parameters
+from tracking import setup_mlflow, log_metrics
 import torch
 import torch.optim as optim
 import numpy as np
@@ -57,6 +58,7 @@ class TwinClient(fl.client.NumPyClient):
         self.twin_id = twin_id
         self.eval_only = eval_only
         self.env = DigitalTwinEnv(twin_id, eval_only=eval_only)
+        setup_mlflow()
         print(
             f"Twin {self.twin_id} initialized. Mode: {'EVALUATION' if self.eval_only else 'TRAINING'}"
         )
@@ -132,6 +134,14 @@ class TwinClient(fl.client.NumPyClient):
         print(
             f"Twin {self.twin_id} [Round {sv_round}] [METRIC] TRAIN Reward: {avg_reward:.2f} Loss: {avg_loss:.4f}"
         )
+        # MLflow Logging
+        log_metrics(
+            {
+                f"{self.twin_id}/train_reward": avg_reward,
+                f"{self.twin_id}/train_loss": avg_loss,
+            },
+            step=int(sv_round) if str(sv_round).isdigit() else None,
+        )
         return (
             self.get_parameters(config={}),
             len(states),
@@ -150,6 +160,11 @@ class TwinClient(fl.client.NumPyClient):
         # Consolidated Metric Line
         print(
             f"Twin {self.twin_id} [Round {sv_round}] [METRIC] EVAL Reward: {avg_reward:.2f} Loss: 0.0"
+        )
+        # MLflow Logging
+        log_metrics(
+            {f"{self.twin_id}/eval_reward": avg_reward},
+            step=int(sv_round) if str(sv_round).isdigit() else None,
         )
 
         return float(-avg_reward), episodes, {"reward": avg_reward}

@@ -87,12 +87,28 @@ def run_experiment():
 
     # Submit Run
     run_name = f"{pipeline_type}_run_{int(time.time())}"
-    print(f"Submitting run {run_name}...")
+
+    # Set MLflow environment for local tracking and pod configuration
+    import mlflow
+
+    mlflow.set_tracking_uri("http://localhost:5050")
+    mlflow.set_experiment(exp_name)
+
+    # Create the run locally first to get the run_id
+    with mlflow.start_run(run_name=run_name) as ml_run:
+        mlflow_run_id = ml_run.info.run_id
+        print(f"Created MLflow Run: {run_name} (ID: {mlflow_run_id})")
+
+    print(f"Submitting run {run_name} to KFP...")
 
     try:
         run = client.create_run_from_pipeline_package(
             pipeline_file=cfg["yaml"],
-            arguments={},
+            arguments={
+                "run_name": run_name,
+                "mlflow_run_id": mlflow_run_id,
+                "mlflow_exp_name": exp_name,
+            },
             run_name=run_name,
             experiment_name=exp_name,
             enable_caching=False,

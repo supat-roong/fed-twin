@@ -2,8 +2,7 @@ venv/
 __pycache__/
 *.pyc
 .ipynb_checkpoints/
-*.yaml
-!setup/kind-cluster.yaml
+pipeline_specs/*.yaml
 metrics/
 !metrics/.gitkeep
 plots/

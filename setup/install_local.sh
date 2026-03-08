@@ -101,21 +101,35 @@ kubectl patch deployment minio -n kubeflow --type=json -p='[{"op": "replace", "p
 echo "🔧 Patching Workflow Controller Executor Image..."
 kubectl patch deployment workflow-controller -n kubeflow --type=json -p='[{"op": "replace", "path": "/spec/template/spec/containers/0/args/3", "value": "quay.io/argoproj/argoexec:v3.4.17"}]'
 
-echo "⏳ Waiting for Kubeflow Deployments to become ready (this may take 5-10 minutes)..."
+# 6. Deploy MLflow Server
+echo "🛠 Deploying MLflow Server..."
+kubectl apply -f k8s/mlflow-server.yaml
+
+echo "   Ensuring 'mlflow-artifacts' bucket exists in MinIO..."
+kubectl run minio-setup-mlflow --image=minio/mc:latest --namespace=kubeflow --restart=Never \
+  --command -- sh -c "mc alias set minio http://minio-service.kubeflow.svc.cluster.local:9000 minio minio123 && mc mb minio/mlflow-artifacts --ignore-existing" 2>/dev/null || true
+kubectl wait --for=condition=completed pod/minio-setup-mlflow -n kubeflow --timeout=60s 2>/dev/null || true
+kubectl delete pod minio-setup-mlflow -n kubeflow 2>/dev/null || true
+
+echo "⏳ Waiting for Kubeflow & MLflow Deployments to become ready..."
 kubectl rollout status deployment/workflow-controller -n kubeflow --timeout=15m
 kubectl rollout status deployment/minio -n kubeflow --timeout=15m
 kubectl rollout status deployment/ml-pipeline -n kubeflow --timeout=15m
 kubectl rollout status deployment/ml-pipeline-ui -n kubeflow --timeout=15m
+kubectl rollout status deployment/mlflow-server -n kubeflow --timeout=15m
 
-# 6. Expose Services via NodePort
+# 7. Expose Services via NodePort
 echo "🌐 Exposing Services via NodePort..."
 # Find ml-pipeline-ui service and patch it
 kubectl patch service ml-pipeline-ui -n kubeflow -p '{"spec": {"type": "NodePort", "ports": [{"port": 80, "targetPort": 3000, "nodePort": 30080}]}}' || true
 # Find minio service and patch it
 kubectl patch service minio-service -n kubeflow --type=json -p='[{"op": "replace", "path": "/spec/type", "value": "NodePort"}, {"op": "replace", "path": "/spec/ports", "value": [{"name": "api", "port": 9000, "protocol": "TCP", "targetPort": 9000, "nodePort": 30900}, {"name": "console", "port": 9001, "protocol": "TCP", "targetPort": 9001, "nodePort": 30901}]}]' || true
+# Find mlflow service and patch it
+kubectl patch service mlflow-service -n kubeflow -p '{"spec": {"type": "NodePort", "ports": [{"port": 5000, "targetPort": 5000, "nodePort": 30500}]}}' || true
 
 echo ""
 echo "✅ Setup complete! Services are exposed locally via Docker/Kind port-mapping:"
 echo "  → Kubeflow Pipelines UI : http://localhost:8080"
+echo "  → MLflow UI             : http://localhost:5050"
 echo "  → MinIO API             : http://localhost:9000"
 echo "  → MinIO Console         : http://localhost:9001"

@@ -22,6 +22,9 @@ def train_single_twin(
     local_episodes: int,
     eval_episodes: int,
     job_id: str,
+    run_name: str,
+    mlflow_run_id: str,
+    mlflow_exp_name: str,
     metrics: Output[Artifact],
 ):
     import os
@@ -64,6 +67,12 @@ spec:
               value: "{{ rounds }}"
             - name: MIN_CLIENTS
               value: "2"
+            - name: MLFLOW_TRACKING_URI
+              value: "http://mlflow-service.kubeflow:5000"
+            - name: MLFLOW_EXPERIMENT_NAME
+              value: "{{ mlflow_exp_name }}"
+            - name: MLFLOW_RUN_ID
+              value: "{{ mlflow_run_id }}"
     Worker:
       replicas: 2
       restartPolicy: OnFailure
@@ -100,6 +109,20 @@ spec:
               value: "{{ entropy_coeff }}"
             - name: MAX_GRAD_NORM
               value: "{{ max_grad_norm }}"
+            - name: MLFLOW_TRACKING_URI
+              value: "http://mlflow-service.kubeflow:5000"
+            - name: MLFLOW_EXPERIMENT_NAME
+              value: "{{ mlflow_exp_name }}"
+            - name: MLFLOW_RUN_ID
+              value: "{{ mlflow_run_id }}"
+            - name: MLFLOW_S3_ENDPOINT_URL
+              value: "http://minio-service.kubeflow:9000"
+            - name: AWS_ACCESS_KEY_ID
+              value: "minio"
+            - name: AWS_SECRET_ACCESS_KEY
+              value: "minio123"
+            - name: MLFLOW_S3_IGNORE_TLS
+              value: "true"
     """
 
     job_name = f"single-job-{job_id}"
@@ -110,10 +133,13 @@ spec:
         namespace=namespace,
         local_episodes=local_episodes,
         eval_episodes=eval_episodes,
-        learning_rate=0.003,  # Increased for better convergence
+        learning_rate=0.003,
         gamma=0.99,
         entropy_coeff=0.01,
         max_grad_norm=0.5,
+        run_name=run_name,
+        mlflow_run_id=mlflow_run_id,
+        mlflow_exp_name=mlflow_exp_name,
     )
 
     with open("/tmp/job.yaml", "w") as f:
@@ -271,6 +297,9 @@ def single_twin_pipeline(
     fl_rounds: int = config.get("fl_rounds", 10),
     local_episodes: int = config.get("local_episodes", 10),
     eval_episodes: int = config.get("eval_episodes", 20),
+    run_name: str = "single_run_default",
+    mlflow_run_id: str = "",
+    mlflow_exp_name: str = "Fed-Twin-Single",
 ):
     import time
 
@@ -282,7 +311,10 @@ def single_twin_pipeline(
         local_episodes=local_episodes,
         eval_episodes=eval_episodes,
         job_id=job_id,
-    )
+        run_name=run_name,
+        mlflow_run_id=mlflow_run_id,
+        mlflow_exp_name=mlflow_exp_name,
+    ).set_env_variable("MLFLOW_TRACKING_URI", "http://mlflow-service.kubeflow:5000")
 
 
 if __name__ == "__main__":

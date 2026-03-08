@@ -1,5 +1,5 @@
 {
-    "fl_rounds": 1,
+    "fl_rounds": 2,
     "num_workers": 2,
     "local_episodes": 2,
     "eval_episodes": 2,

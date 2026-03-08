@@ -27,66 +27,58 @@ Physical Robot ⟷ Digital Twin (Real-time Sync)
 **Traditional Approach**: Train one model on one perfect simulation ❌  
 **Our Approach**: Create multiple digital twins, each with different physics ✅
 
-### 🌐 Why Federated Learning?
+### 🌐 Federated Architecture
 
-Instead of collecting all data centrally, each twin learns **locally** and shares only its "intelligence":
+Instead of collecting all data centrally, each twin learns **locally** and shares only its "intelligence" (model weights).
 
-```
-┌─────────────────────────────────────────────────────────┐
-│         TRADITIONAL (Centralized)                       │
-├─────────────────────────────────────────────────────────┤
-│                                                         │
-│  Twin 1 ──┐                                             │
-│  Twin 2 ──┼── [Raw Data] ──→ Central Server             │
-│  Twin 3 ──┘                         ↓                   │
-│                            Train One Model              │
-│                                                         │
-│  ❌ Privacy concerns                                    │
-│  ❌ Huge data transfer                                  │
-│  ❌ Single point of failure                             │
-└─────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    Server[("☁️ FL Server (Aggregator)")]
+    
+    subgraph "Local Workforce (Edge)"
+        T1["🤖 Digital Twin A<br/>(High Gravity)"]
+        T2["🤖 Digital Twin B<br/>(Low Mass)"]
+        T3["🤖 Digital Twin C<br/>(High Friction)"]
+    end
 
-┌─────────────────────────────────────────────────────────┐
-│         FEDERATED (Decentralized)                       │
-├─────────────────────────────────────────────────────────┤
-│                                                         │
-│  Twin 1: Train locally ──┐                              │
-│  Twin 2: Train locally ──┼── [Weights Only] ──→ Server  │
-│  Twin 3: Train locally ──┘                        ↓     │
-│                                              Aggregate  │
-│                                                   ↓     │
-│                                            Global Model │
-│                                                         │
-│  ✅ Data stays local (privacy)                          │
-│  ✅ Small weight updates only                           │
-│  ✅ Learn from diversity                                │
-└─────────────────────────────────────────────────────────┘
+    %% Step 1: Broadcast
+    Server -- "1. Broadcast Global Model" --> T1
+    Server -- "1. Broadcast Global Model" --> T2
+    Server -- "1. Broadcast Global Model" --> T3
+
+    %% Step 2: Local Training (Self-loops for clarity)
+    T1 -- "2. Local Training (Data stays here!)" --> T1
+    T2 -- "2. Local Training (Data stays here!)" --> T2
+    T3 -- "2. Local Training (Data stays here!)" --> T3
+
+    %% Step 3: Upload
+    T1 -- "3. Upload Weights Only" --> Server
+    T2 -- "3. Upload Weights Only" --> Server
+    T3 -- "3. Upload Weights Only" --> Server
+    
+    style Server fill:#f5f5f5,stroke:#333,stroke-width:2px
 ```
 
-### 🔄 How It Works: The FL Training Cycle
+### 🔄 The FL Training Cycle
 
-Each round of federated learning follows this pattern:
+Each round of federated learning follows a structured synchronization loop:
 
-```
-Round N:
-    
-    1️⃣ BROADCAST
-       Global Model → [Twin 1, Twin 2, Twin 3, ...]
-    
-    2️⃣ LOCAL TRAINING (Parallel)
-       Twin 1: CartPole with high mass   → learns controls for heavy system
-       Twin 2: CartPole with low gravity → learns for low-g environment  
-       Twin 3: CartPole with high friction → compensates for resistance
-       ...each collects experience, updates policy...
-    
-    3️⃣ AGGREGATION
-       [Weights from all twins] → FedAvg → New Global Model
-    
-    4️⃣ EVALUATION
-       Test global model on neutral twin → measure generalization
-    
-    5️⃣ REPEAT
-       New Global Model becomes input for Round N+1
+```mermaid
+sequenceDiagram
+    participant S as FL Server
+    participant W as Workers (Twins)
+    participant E as Neutral Eval Twin
+
+    Note over S, E: Round N Starts
+    S->>W: 1. Broadcast Global Model Weights
+    rect rgb(240, 240, 240)
+        Note right of W: 2. Parallel Local Training
+        W->>W: Learn from unique physics
+    end
+    W->>S: 3. Return Updated Local Weights
+    S->>S: 4. FedAvg Aggregation
+    S->>E: 5. Evaluate Global Generalization
+    Note over S, E: Round N+1 Continues...
 ```
 
 ### 🎯 The Goal: Generalization Through Knowledge Sharing
@@ -163,6 +155,30 @@ The project includes an automated analysis suite that generates insights after e
 
 *   **Analysis Script**: `src/analysis/generalization_gap.py`
 *   **Generated Plot**: `plots/generalization_gap_{type}.png`
+
+---
+
+## 🧪 MLflow Tracking
+
+The project uses **MLflow** for centralized experiment tracking and metric visualization.
+
+### 🏛 Unified Tracking Strategy
+We implement a "Single Execution, Single Run" strategy to keep the experiment history clean:
+- **Experiment by Type**: Runs are grouped into experiments based on the pipeline type (e.g., `Fed-Twin-FL`, `Fed-Twin-Single-Visual`).
+- **Unified Runs**: Each pipeline execution creates exactly **one** MLflow run. All parallel workers and sequential rounds log to this unique run.
+- **Prefix-Based Metrics**: Metrics are prefixed with worker IDs (e.g., `train-twin-1/reward`, `eval-twin-global/loss`) to distinguish between different sources within the same timeline.
+
+### 🖥 Monitoring & Debugging
+
+Both MLflow and Kubeflow Pipelines (KFP) provide specialized UIs for monitoring.
+
+- **MLflow UI**: Track RL metrics, compare runs, and manage model artifacts.
+  - **URL**: [http://localhost:5050](http://localhost:5050)
+- **KFP UI**: Visualize pipeline execution graphs, logs, and artifacts.
+  - **URL**: [http://localhost:8080](http://localhost:8080)
+
+> [!NOTE]
+> Artifacts (model weights and metrics) are stored in the integrated MinIO bucket via S3-compatible API.
 
 ---
 

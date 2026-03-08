@@ -3,13 +3,21 @@ from kfp import compiler
 from kfp.dsl import Input, Output, Model, Artifact
 
 BASE_IMAGE = "fed-twin-app:v1"
+MLFLOW_URI = "http://mlflow-service.kubeflow:5000"
 
 
 @dsl.component(base_image=BASE_IMAGE)
-def initialize_model(model: Output[Model]):
+def initialize_model(
+    run_name: str, mlflow_run_id: str, mlflow_exp_name: str, model: Output[Model]
+):
     import torch
+    import os
     from engine import PolicyNet
+    from tracking import setup_mlflow
 
+    os.environ["MLFLOW_EXPERIMENT_NAME"] = mlflow_exp_name
+    os.environ["MLFLOW_RUN_ID"] = mlflow_run_id
+    setup_mlflow()
     net = PolicyNet()
     torch.save(net.state_dict(), model.path)
     print(f"Initialized global model at {model.path}")
@@ -23,12 +31,20 @@ def train_twin(
     metrics: Output[Artifact],
     round_num: int,
     local_episodes: int,
+    run_name: str,
+    mlflow_run_id: str,
+    mlflow_exp_name: str,
 ):
     import torch
     import csv
+    import os
     from engine import PolicyNet, get_parameters
     from client import TwinClient
+    from tracking import setup_mlflow
 
+    os.environ["MLFLOW_EXPERIMENT_NAME"] = mlflow_exp_name
+    os.environ["MLFLOW_RUN_ID"] = mlflow_run_id
+    setup_mlflow()
     print(f"[{twin_id}] Loading global model from {input_model.path}")
     model = PolicyNet()
     model.load_state_dict(torch.load(input_model.path))
@@ -70,12 +86,20 @@ def eval_twin(
     metrics: Output[Artifact],
     round_num: int,
     local_episodes: int,
+    run_name: str,
+    mlflow_run_id: str,
+    mlflow_exp_name: str,
 ):
     import torch
     import csv
+    import os
     from engine import PolicyNet, get_parameters
     from client import TwinClient
+    from tracking import setup_mlflow
 
+    os.environ["MLFLOW_EXPERIMENT_NAME"] = mlflow_exp_name
+    os.environ["MLFLOW_RUN_ID"] = mlflow_run_id
+    setup_mlflow()
     print(f"[{twin_id}] Loading global model from {input_model.path}")
     model = PolicyNet()
     model.load_state_dict(torch.load(input_model.path))
@@ -105,9 +129,17 @@ def aggregate_models(
     model_1: Input[Model],
     output_model: Output[Model],
     round_num: int,
+    run_name: str,
+    mlflow_run_id: str,
+    mlflow_exp_name: str,
 ):
     import torch
+    import os
+    from tracking import setup_mlflow
 
+    os.environ["MLFLOW_EXPERIMENT_NAME"] = mlflow_exp_name
+    os.environ["MLFLOW_RUN_ID"] = mlflow_run_id
+    setup_mlflow()
     paths = [model_0.path, model_1.path]
     print(f"Aggregating {len(paths)} models for Round {round_num}")
 
@@ -126,8 +158,14 @@ def aggregate_models(
     name="Federated Visual Pipeline",
     description="Dynamically generated visual pipeline for 2 workers.",
 )
-def visual_fl_pipeline():
-    init_task = initialize_model()
+def visual_fl_pipeline(
+    run_name: str = "visual_run_default",
+    mlflow_run_id: str = "",
+    mlflow_exp_name: str = "Fed-Twin-FL-Visual",
+):
+    init_task = initialize_model(
+        run_name=run_name, mlflow_run_id=mlflow_run_id, mlflow_exp_name=mlflow_exp_name
+    ).set_env_variable("MLFLOW_TRACKING_URI", MLFLOW_URI)
     current_model = init_task.outputs["model"]
 
     for r in range(1, 1 + 1):
@@ -138,29 +176,41 @@ def visual_fl_pipeline():
             input_model=current_model,
             local_episodes=2,
             round_num=r,
-        )
+            run_name=run_name,
+            mlflow_run_id=mlflow_run_id,
+            mlflow_exp_name=mlflow_exp_name,
+        ).set_env_variable("MLFLOW_TRACKING_URI", MLFLOW_URI)
 
         t1 = train_twin(
             twin_id="train-twin-2",
             input_model=current_model,
             local_episodes=2,
             round_num=r,
-        )
+            run_name=run_name,
+            mlflow_run_id=mlflow_run_id,
+            mlflow_exp_name=mlflow_exp_name,
+        ).set_env_variable("MLFLOW_TRACKING_URI", MLFLOW_URI)
 
         # Aggregation (waits for all training tasks to complete)
         agg = aggregate_models(
             model_0=t0.outputs["output_model"],
             model_1=t1.outputs["output_model"],
             round_num=r,
-        )
+            run_name=run_name,
+            mlflow_run_id=mlflow_run_id,
+            mlflow_exp_name=mlflow_exp_name,
+        ).set_env_variable("MLFLOW_TRACKING_URI", MLFLOW_URI)
 
         # Global Evaluation (Eval Twin)
-        t_eval = eval_twin(
+        eval_twin(
             twin_id="eval-twin-global",
             input_model=agg.outputs["output_model"],
             local_episodes=2,
             round_num=r,
-        )
+            run_name=run_name,
+            mlflow_run_id=mlflow_run_id,
+            mlflow_exp_name=mlflow_exp_name,
+        ).set_env_variable("MLFLOW_TRACKING_URI", MLFLOW_URI)
 
         current_model = agg.outputs["output_model"]
 

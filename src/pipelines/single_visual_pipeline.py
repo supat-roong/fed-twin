@@ -11,13 +11,21 @@ except FileNotFoundError:
     config = {"fl_rounds": 5, "local_episodes": 10}
 
 BASE_IMAGE = "fed-twin-app:v1"
+MLFLOW_URI = "http://mlflow-service.kubeflow:5000"
 
 
 @dsl.component(base_image=BASE_IMAGE)
-def initialize_model_visual(model: Output[Model]):
+def initialize_model_visual(
+    run_name: str, mlflow_run_id: str, mlflow_exp_name: str, model: Output[Model]
+):
     import torch
+    import os
     from engine import PolicyNet
+    from tracking import setup_mlflow
 
+    os.environ["MLFLOW_EXPERIMENT_NAME"] = mlflow_exp_name
+    os.environ["MLFLOW_RUN_ID"] = mlflow_run_id
+    setup_mlflow()
     net = PolicyNet()
     torch.save(net.state_dict(), model.path)
     print(f"Initialized global model at {model.path}")
@@ -31,6 +39,9 @@ def eval_step(
     metrics: Output[Artifact],
     round_num: int,
     eval_episodes: int,
+    run_name: str,
+    mlflow_run_id: str,
+    mlflow_exp_name: str,
     learning_rate: float = 0.003,
     gamma: float = 0.99,
     entropy_coeff: float = 0.01,
@@ -41,6 +52,11 @@ def eval_step(
     import os
     from engine import PolicyNet, get_parameters
     from client import TwinClient
+    from tracking import setup_mlflow
+
+    os.environ["MLFLOW_EXPERIMENT_NAME"] = mlflow_exp_name
+    os.environ["MLFLOW_RUN_ID"] = mlflow_run_id
+    setup_mlflow()
 
     # Set hyperparameters as environment variables
     os.environ["LEARNING_RATE"] = str(learning_rate)
@@ -57,6 +73,7 @@ def eval_step(
         params, {"server_round": round_num, "eval_episodes": eval_episodes}
     )
     reward = results["reward"]
+
     loss = 0.0
     torch.save(model.state_dict(), output_model.path)
 
@@ -74,6 +91,9 @@ def train_step(
     metrics: Output[Artifact],
     round_num: int,
     local_episodes: int,
+    run_name: str,
+    mlflow_run_id: str,
+    mlflow_exp_name: str,
     learning_rate: float = 0.003,
     gamma: float = 0.99,
     entropy_coeff: float = 0.01,
@@ -84,6 +104,11 @@ def train_step(
     import os
     from engine import PolicyNet, get_parameters
     from client import TwinClient
+    from tracking import setup_mlflow
+
+    os.environ["MLFLOW_EXPERIMENT_NAME"] = mlflow_exp_name
+    os.environ["MLFLOW_RUN_ID"] = mlflow_run_id
+    setup_mlflow()
 
     # Set hyperparameters as environment variables
     os.environ["LEARNING_RATE"] = str(learning_rate)
@@ -127,8 +152,13 @@ def single_twin_visual_pipeline(
     fl_rounds: int = config.get("fl_rounds", 10),
     local_episodes: int = config.get("local_episodes", 10),
     eval_episodes: int = config.get("eval_episodes", 20),
+    run_name: str = "single_visual_run_default",
+    mlflow_run_id: str = "",
+    mlflow_exp_name: str = "Fed-Twin-Single-Visual",
 ):
-    init_task = initialize_model_visual()
+    init_task = initialize_model_visual(
+        run_name=run_name, mlflow_run_id=mlflow_run_id, mlflow_exp_name=mlflow_exp_name
+    ).set_env_variable("MLFLOW_TRACKING_URI", MLFLOW_URI)
 
     # Track models per round for clean dependencies
     round_models = [init_task.outputs["model"]]
@@ -148,7 +178,10 @@ def single_twin_visual_pipeline(
             input_model=round_models[-1],
             round_num=r,
             local_episodes=local_episodes,
-        )
+            run_name=run_name,
+            mlflow_run_id=mlflow_run_id,
+            mlflow_exp_name=mlflow_exp_name,
+        ).set_env_variable("MLFLOW_TRACKING_URI", MLFLOW_URI)
 
         # 2. Global Evaluation Step (on OUTGOING model M_r)
         eval_task = eval_step(
@@ -156,7 +189,10 @@ def single_twin_visual_pipeline(
             input_model=train_task.outputs["output_model"],
             round_num=r,
             eval_episodes=eval_episodes,
-        )
+            run_name=run_name,
+            mlflow_run_id=mlflow_run_id,
+            mlflow_exp_name=mlflow_exp_name,
+        ).set_env_variable("MLFLOW_TRACKING_URI", MLFLOW_URI)
 
         # Ensure eval happens after training
         eval_task.after(train_task)

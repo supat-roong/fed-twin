@@ -13,3 +13,6 @@ nodes:
       - containerPort: 30901   # MinIO Console
         hostPort: 9001
         protocol: TCP
+      - containerPort: 30500   # MLflow UI
+        hostPort: 5050
+        protocol: TCP

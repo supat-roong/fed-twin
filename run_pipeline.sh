@@ -3,7 +3,9 @@
 
 set -e # Exit on error
 
-PIPELINE_ARG=${1:-"all"}
+PIPELINE_ARG_RAW=${1:-"all"}
+# Portable hyphen to underscore replacement
+PIPELINE_ARG=$(echo "$PIPELINE_ARG_RAW" | tr '-' '_')
 
 run_pipeline() {
     local PIPELINE_TYPE=$1
@@ -65,9 +67,6 @@ kubectl wait --for=condition=ready pod -l app=ml-pipeline-ui -n kubeflow --timeo
 
 echo "   Waiting for API to respond (checking cluster service)..."
 for i in {1..60}; do
-    # Check the internal cluster service IP or NodePort directly if possible.
-    # We will assume that since we removed the localhost port-forwarding, the python
-    # kfp Client will be configured to connect to the right host.
     if kubectl get pods -n kubeflow -l app=ml-pipeline-ui | grep -q Running; then
         echo "✅ KFP API is UP."
         break
