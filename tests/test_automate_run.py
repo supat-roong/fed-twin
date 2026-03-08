@@ -18,7 +18,13 @@ import automate_run
 @patch("time.sleep")
 @patch("builtins.open", new_callable=mock_open)
 def test_run_experiment_fl_success(
-    mock_file, mock_sleep, mock_time, mock_exists, mock_system, mock_kfp_client, mock_mlflow
+    mock_file,
+    mock_sleep,
+    mock_time,
+    mock_exists,
+    mock_system,
+    mock_kfp_client,
+    mock_mlflow,
 ):
     # Setup MLflow mock
     mock_mlflow_run = MagicMock()
@@ -85,7 +91,9 @@ def test_run_experiment_compilation_failed(mock_system, mock_kfp_client, mock_ml
 @patch("os.system", return_value=0)
 @patch("os.path.exists", return_value=False)  # YAML missing
 @patch("sys.argv", ["automate_run.py", "fl"])
-def test_run_experiment_yaml_missing(mock_exists, mock_system, mock_kfp_client, mock_mlflow):
+def test_run_experiment_yaml_missing(
+    mock_exists, mock_system, mock_kfp_client, mock_mlflow
+):
     with pytest.raises(SystemExit) as e:
         automate_run.run_experiment()
     assert e.value.code == 1
@@ -96,7 +104,9 @@ def test_run_experiment_yaml_missing(mock_exists, mock_system, mock_kfp_client, 
 @patch("os.system", return_value=0)
 @patch("os.path.exists", return_value=True)
 @patch("sys.argv", ["automate_run.py", "invalid"])
-def test_run_experiment_invalid_type(mock_exists, mock_system, mock_kfp_client, mock_mlflow):
+def test_run_experiment_invalid_type(
+    mock_exists, mock_system, mock_kfp_client, mock_mlflow
+):
     with pytest.raises(SystemExit) as e:
         automate_run.run_experiment()
     assert e.value.code == 1
