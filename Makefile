@@ -1,4 +1,4 @@
-.PHONY: install install-dev test lint fmt type-check clean build-images \
+.PHONY: install install-dev test test-cov coverage lint fmt type-check clean build-images \
         local-setup local-teardown compile-pipeline run-pipeline clean-results
 
 # ---- Deps ----
@@ -14,6 +14,9 @@ test:
 
 test-fast:
 	uv run pytest tests/ -v -k "not test_long_running"
+
+test-cov coverage:
+	uv run pytest --cov=src --cov-report=term-missing tests/
 
 # ---- Code Quality ----
 lint:

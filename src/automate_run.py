@@ -1,3 +1,4 @@
+import mlflow
 import kfp
 import time
 import os
@@ -89,8 +90,6 @@ def run_experiment():
     run_name = f"{pipeline_type}_run_{int(time.time())}"
 
     # Set MLflow environment for local tracking and pod configuration
-    import mlflow
-
     mlflow.set_tracking_uri("http://localhost:5050")
     mlflow.set_experiment(exp_name)
 
