@@ -31,5 +31,6 @@ dependencies = [
 dev = [
     "pytest>=9.0.2",
     "pytest-cov>=7.0.0",
+    "pytest-xdist>=3.5.0",
     "ruff>=0.15.5",
 ]

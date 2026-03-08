@@ -7,29 +7,32 @@ on:
     branches: [ main ]
 
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Install uv
+      uses: astral-sh/setup-uv@v5
+    - name: Run linter (Ruff)
+      run: uvx ruff check .
+    - name: Check formatting (Ruff)
+      run: uvx ruff format --check .
+
   test:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-
     - name: Install uv
       uses: astral-sh/setup-uv@v5
       with:
         enable-cache: true
         cache-dependency-glob: "uv.lock"
-
     - name: Set up Python
       run: uv python install 3.10
-
     - name: Install dependencies
       run: uv sync
-
-    - name: Run linter (Ruff)
-      run: uv run ruff check .
-
-    - name: Check formatting (Ruff)
-      run: uv run ruff format --check .
-
     - name: Run tests (Pytest) with coverage
+      timeout-minutes: 5
       run: |
-        PYTHONPATH=src uv run pytest --cov=src --cov-report=term-missing --cov-fail-under=85 tests/
+        export OMP_NUM_THREADS=1
+        PYTHONPATH=src uv run pytest -n auto --cov=src --cov-report=term-missing --cov-fail-under=85 tests/

@@ -14,8 +14,8 @@ import automate_run
 @patch("os.system")
 @patch("os.path.exists")
 @patch("sys.argv", ["automate_run.py", "fl"])
-@patch("time.time", return_value=1234567890)
-@patch("time.sleep")
+@patch("automate_run.time.time", return_value=1773010000)
+@patch("automate_run.time.sleep")
 @patch("builtins.open", new_callable=mock_open)
 def test_run_experiment_fl_success(
     mock_file,
@@ -117,8 +117,8 @@ def test_run_experiment_invalid_type(
 @patch("os.system", return_value=0)
 @patch("os.path.exists", return_value=True)
 @patch("sys.argv", ["automate_run.py", "fl"])
-@patch("time.sleep")
-@patch("time.time", side_effect=[0, 100, 200, 300])  # For polling
+@patch("automate_run.time.sleep")
+@patch("automate_run.time.time", side_effect=[1773010000, 1773010100, 1773010200, 1773010300])  # For polling
 def test_run_experiment_poll_failure(
     mock_time, mock_sleep, mock_exists, mock_system, mock_kfp_client, mock_mlflow
 ):

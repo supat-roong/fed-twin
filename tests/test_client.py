@@ -64,23 +64,29 @@ def test_twin_client_fit_eval_only():
     assert metrics == {}
 
 
-def test_twin_client_evaluate():
+@patch("core.client.log_metrics")
+@patch("core.client.DigitalTwinEnv.collect_experience")
+def test_twin_client_evaluate(mock_collect, mock_log):
+    # Mock collect_experience to return dummy reward for speed
+    mock_collect.return_value = (None, None, [100.0], None)
+    
     model = PolicyNet()
     client = TwinClient(model, twin_id="test_eval")
 
     parameters = client.get_parameters(config={})
-    # Run 1 episode to be fast; no learning happens here, just inference
+    # This will use the mocked collect_experience and be instant
     loss, num_examples, metrics = client.evaluate(
         parameters, {"server_round": 1, "eval_episodes": 1}
     )
 
     assert num_examples == 1
     assert "reward" in metrics
-    assert isinstance(metrics["reward"], float)
+    assert metrics["reward"] == 100.0
 
 
+@patch("core.client.log_metrics")
 @patch("core.client.DigitalTwinEnv.collect_experience")
-def test_twin_client_fit_train(mock_collect):
+def test_twin_client_fit_train(mock_collect, mock_log):
     # Mock collect_experience to return dummy data for speed
     mock_collect.return_value = (
         np.zeros((10, 4)),  # states
@@ -95,7 +101,7 @@ def test_twin_client_fit_train(mock_collect):
     parameters = client.get_parameters(config={})
     # This will use the mocked collect_experience and run the optimizer forward/backward over the dummy data
     new_parameters, num_examples, metrics = client.fit(
-        parameters, {"server_round": 1, "local_episodes": 2}
+        parameters, {"server_round": 1, "local_episodes": 1}
     )
 
     assert num_examples == 10  # length of states returned by our mock
