@@ -118,7 +118,10 @@ def test_run_experiment_invalid_type(
 @patch("os.path.exists", return_value=True)
 @patch("sys.argv", ["automate_run.py", "fl"])
 @patch("automate_run.time.sleep")
-@patch("automate_run.time.time", side_effect=[1773010000, 1773010100, 1773010200, 1773010300])  # For polling
+@patch(
+    "automate_run.time.time",
+    side_effect=[1773010000, 1773010100, 1773010200, 1773010300],
+)  # For polling
 def test_run_experiment_poll_failure(
     mock_time, mock_sleep, mock_exists, mock_system, mock_kfp_client, mock_mlflow
 ):

@@ -69,7 +69,7 @@ def test_twin_client_fit_eval_only():
 def test_twin_client_evaluate(mock_collect, mock_log):
     # Mock collect_experience to return dummy reward for speed
     mock_collect.return_value = (None, None, [100.0], None)
-    
+
     model = PolicyNet()
     client = TwinClient(model, twin_id="test_eval")
 
