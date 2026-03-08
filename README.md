@@ -2,7 +2,7 @@
 
 [![Stack: Kubeflow](https://img.shields.io/badge/Stack-Kubeflow%20|%20PyTorch%20|%20Flower-blue)](https://kubeflow.org)
 
-A personal project for learning **Distributed Digital Twin Training** using Federated Learning. This implementation acts as a simulation framework designed for local Kubernetes clusters (e.g., Kind, Minikube) to mock a distributed robotic fleet. While tested extensively on macOS (Colima/Kind), it is compatible with any local Kubernetes environment.
+A personal project for learning **Distributed Digital Twin Training** using Federated Learning. This implementation acts as a simulation framework designed for local Kubernetes clusters (e.g., Kind, Minikube) to mock a distributed fleet of systems. While tested extensively on macOS (Colima/Kind), it is compatible with any local Kubernetes environment.
 
 ---
 
@@ -13,16 +13,16 @@ A personal project for learning **Distributed Digital Twin Training** using Fede
 A **Digital Twin** is not just a replica, it's a **living twin** of a physical system that mirrors its behavior, state, and characteristics in real-time. In practice, digital twins continuously sync with their physical counterparts through sensors and data feeds.
 
 ```
-Physical Robot ⟷ Digital Twin (Real-time Sync)
+Physical System ⟷ Digital Twin (Real-time Sync)
      🤖      ⟷        💻
 ```
 
 **For this project**: We use **simulated environments** (CartPole) as stand-ins for physical systems. While not connected to real hardware, they demonstrate the core FL+DT concepts by creating diverse physics variations.
 
-**The Challenge**: Every physical system is unique (wear, manufacturing tolerances, environment)
-- Robot A might have heavier arms
-- Robot B operates in different environment
-- Robot C has more friction in joints
+**The Challenge**: Every physical system is unique (internal tolerances, environmental conditions, and hardware aging).
+- System A operates under specific stress conditions.
+- System B is a newer model with slightly different response times.
+- System C has unique operational wear and tear.
 
 **Traditional Approach**: Train one model on one perfect simulation ❌  
 **Our Approach**: Create multiple digital twins, each with different physics ✅
@@ -36,9 +36,9 @@ graph TD
     Server[("☁️ FL Server (Aggregator)")]
     
     subgraph "Local Workforce (Edge)"
-        T1["🤖 Digital Twin A<br/>(High Gravity)"]
-        T2["🤖 Digital Twin B<br/>(Low Mass)"]
-        T3["🤖 Digital Twin C<br/>(High Friction)"]
+        T1["🤖 Digital Twin A<br/>(Local View)"]
+        T2["🤖 Digital Twin B<br/>(Local View)"]
+        T3["🤖 Digital Twin C<br/>(Local View)"]
     end
 
     %% Step 1: Broadcast
@@ -58,6 +58,16 @@ graph TD
     
     style Server fill:#f5f5f5,stroke:#333,stroke-width:2px
 ```
+
+### 🌟 Why choose Federated Architecture?
+
+| Benefit | How it works in this project |
+| :--- | :--- |
+| **🔐 Data Privacy** | Raw training data (states and transitions) never leaves the local Digital Twin. |
+| **🚀 Efficiency** | We only transmit model parameters, avoiding the need to transfer full datasets. |
+| **🌍 Diversity** | The global model learns from the unique physical variations of every twin simultaneously. |
+| **🛡️ Robustness** | If one twin has corrupted data or is offline, the global model still benefits from the rest of the fleet. |
+| **✨ Generalization** | The resulting policy is more robust than any model trained on a single environmental variation. |
 
 ### 🔄 The FL Training Cycle
 
@@ -86,14 +96,14 @@ sequenceDiagram
 **Core Objective**: Build a **single global model** that works well across **all physical variations** by sharing knowledge across the fleet.
 
 **How Knowledge Sharing Works**:
-- Twin 1 (heavy system) learns: "Apply stronger force to compensate for mass"
-- Twin 2 (low gravity) learns: "Use gentler corrections to avoid overshooting"  
-- Twin 3 (high friction) learns: "Anticipate resistance and adjust timing"
+- Twin 1 learns optimal strategies for one set of operational conditions.
+- Twin 2 identifies patterns that work in a different environment.
+- Twin 3 discovers edge-case adjustments unique to its state.
 
 When these insights are **aggregated**, the global model learns:
-- 💡 Robust strategies that work across different conditions
-- 💡 Generalized policies that adapt to unseen physics
-- 💡 Knowledge from the entire fleet, not just one twin
+- 💡 Robust strategies that work across all observed conditions.
+- 💡 Generalized policies that adapt to unseen variations.
+- 💡 Collective intelligence gathered from the entire fleet.
 
 **The Result**: A model that performs better on **new, unseen variations** than any individual twin could achieve alone. This is the power of federated learning applied to digital twins—**collective intelligence through privacy-preserving knowledge sharing**!
 
@@ -144,7 +154,7 @@ The project includes an automated analysis suite that generates insights after e
 
 ### 2. Worker Training Dynamics (Worker Diversity)
 
-**Concept**: Measures the variance in training rewards across different twins. In a healthy FL system, we expect individual workers to have different learning curves as they adapt to their unique physical environments (e.g., heavy vs. light gravity), while the global model aggregates these diverse insights.
+**Concept**: Measures the variance in training rewards across different twins. In a healthy FL system, we expect individual workers to have different learning curves as they adapt to their unique physical variations, while the global model aggregates these diverse insights.
 
 *   **Analysis Script**: `src/analysis/worker_diversity.py`
 *   **Generated Plot**: `plots/worker_diversity.png`
