@@ -1,13 +1,13 @@
 from kfp import dsl
 from kfp import compiler
 from kfp.dsl import Input, Output, Model, Artifact
-import torch
 
 BASE_IMAGE = "fed-twin-app:v1"
 
 
 @dsl.component(base_image=BASE_IMAGE)
 def initialize_model(model: Output[Model]):
+    import torch
     from engine import PolicyNet
 
     net = PolicyNet()
@@ -23,22 +23,11 @@ def train_twin(
     metrics: Output[Artifact],
     round_num: int,
     local_episodes: int,
-    eval_episodes: int,
-    learning_rate: float = 0.003,
-    gamma: float = 0.99,
-    entropy_coeff: float = 0.01,
-    max_grad_norm: float = 0.5,
 ):
+    import torch
     import csv
-    import os
     from engine import PolicyNet, get_parameters
     from client import TwinClient
-
-    # Set hyperparameters as environment variables
-    os.environ["LEARNING_RATE"] = str(learning_rate)
-    os.environ["GAMMA"] = str(gamma)
-    os.environ["ENTROPY_COEFF"] = str(entropy_coeff)
-    os.environ["MAX_GRAD_NORM"] = str(max_grad_norm)
 
     print(f"[{twin_id}] Loading global model from {input_model.path}")
     model = PolicyNet()
@@ -58,7 +47,7 @@ def train_twin(
     # 2. Post-Training Local Evaluation
     print(f"[{twin_id}] Running Post-Training Local Evaluation...")
     _, _, eval_results = client.evaluate(
-        new_params, {"server_round": round_num, "eval_episodes": eval_episodes}
+        new_params, {"server_round": round_num, "local_episodes": local_episodes}
     )
     local_eval_reward = eval_results["reward"]
 
@@ -80,22 +69,12 @@ def eval_twin(
     output_model: Output[Model],
     metrics: Output[Artifact],
     round_num: int,
-    eval_episodes: int,
-    learning_rate: float = 0.003,
-    gamma: float = 0.99,
-    entropy_coeff: float = 0.01,
-    max_grad_norm: float = 0.5,
+    local_episodes: int,
 ):
+    import torch
     import csv
-    import os
     from engine import PolicyNet, get_parameters
     from client import TwinClient
-
-    # Set hyperparameters as environment variables
-    os.environ["LEARNING_RATE"] = str(learning_rate)
-    os.environ["GAMMA"] = str(gamma)
-    os.environ["ENTROPY_COEFF"] = str(entropy_coeff)
-    os.environ["MAX_GRAD_NORM"] = str(max_grad_norm)
 
     print(f"[{twin_id}] Loading global model from {input_model.path}")
     model = PolicyNet()
@@ -107,7 +86,7 @@ def eval_twin(
 
     print(f"[{twin_id}] running global evaluation.")
     loss_neg, num_samples, results = client.evaluate(
-        params, {"server_round": round_num, "eval_episodes": eval_episodes}
+        params, {"server_round": round_num, "local_episodes": local_episodes}
     )
     eval_reward = results["reward"]
 
@@ -127,6 +106,7 @@ def aggregate_models(
     output_model: Output[Model],
     round_num: int,
 ):
+    import torch
 
     paths = [model_0.path, model_1.path]
     print(f"Aggregating {len(paths)} models for Round {round_num}")
@@ -150,14 +130,13 @@ def visual_fl_pipeline():
     init_task = initialize_model()
     current_model = init_task.outputs["model"]
 
-    for r in range(1, 3 + 1):
+    for r in range(1, 1 + 1):
         # Parallel Training
 
         t0 = train_twin(
             twin_id="train-twin-1",
             input_model=current_model,
             local_episodes=2,
-            eval_episodes=10,
             round_num=r,
         )
 
@@ -165,7 +144,6 @@ def visual_fl_pipeline():
             twin_id="train-twin-2",
             input_model=current_model,
             local_episodes=2,
-            eval_episodes=10,
             round_num=r,
         )
 
@@ -177,10 +155,10 @@ def visual_fl_pipeline():
         )
 
         # Global Evaluation (Eval Twin)
-        eval_twin(
+        t_eval = eval_twin(
             twin_id="eval-twin-global",
             input_model=agg.outputs["output_model"],
-            eval_episodes=10,
+            local_episodes=2,
             round_num=r,
         )
 

@@ -1,0 +1,15 @@
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: fed-twin-cluster
+nodes:
+  - role: control-plane
+    extraPortMappings:
+      - containerPort: 30080   # Kubeflow Pipelines UI
+        hostPort: 8080
+        protocol: TCP
+      - containerPort: 30900   # MinIO API
+        hostPort: 9000
+        protocol: TCP
+      - containerPort: 30901   # MinIO Console
+        hostPort: 9001
+        protocol: TCP

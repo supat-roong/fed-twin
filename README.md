@@ -172,21 +172,28 @@ The project includes an automated analysis suite that generates insights after e
 - **Container Runtime**: Docker Desktop, Colima, or Podman.
 - **Tools**: `kubectl`, `python 3.10+`, and `uv`.
 
-### 2. Automatic Setup (Recommended)
-The provided `run_project.sh` automates the entire lifecycle: environment creation, cluster detection, image building, and pipeline execution.
+### 2. Local Setup (Recommended)
+You can setup the local `kind` cluster and deploy the infrastructure using `make`:
 
 ```bash
-# General Command
-./run_project.sh all
+# Setup the local Kind cluster and Kubeflow dependencies
+make local-setup
 ```
 
-### 3. Manual Control
-You can run specific pipeline strategies:
+### 3. Pipeline Execution
+Run the pipelines using `make run-pipeline`:
 ```bash
-./run_project.sh single         # Run single worker baseline
-./run_project.sh fl             # Run full federated fleet
-./run_project.sh fl_visual      # Run FL with real-time DAG visualization
-./run_project.sh single_visual  # Run single agent with DAG visualization
+make run-pipeline ARGS="all"            # Run all pipelines sequentially
+make run-pipeline ARGS="single"         # Run single worker baseline
+make run-pipeline ARGS="fl"             # Run full federated fleet
+make run-pipeline ARGS="fl_visual"      # Run FL with real-time DAG visualization
+make run-pipeline ARGS="single_visual"  # Run single agent with DAG visualization
+```
+
+### 4. Teardown
+To destroy the local cluster, you can run:
+```bash
+make local-teardown
 ```
 
 ---

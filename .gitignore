@@ -3,6 +3,7 @@ __pycache__/
 *.pyc
 .ipynb_checkpoints/
 *.yaml
+!setup/kind-cluster.yaml
 metrics/
 !metrics/.gitkeep
 plots/
