@@ -14,3 +14,4 @@ plots/
 .ruff_cache
 .venv/
 mlflow.db
+src/pipelines/fl_visual_k8s_pipeline.py
