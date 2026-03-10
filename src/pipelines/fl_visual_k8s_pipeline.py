@@ -217,5 +217,5 @@ def visual_fl_pipeline(
 
 if __name__ == "__main__":
     compiler.Compiler().compile(
-        visual_fl_pipeline, "pipeline_specs/fl_visual_pipeline.yaml"
+        visual_fl_pipeline, "pipeline_specs/fl_visual_k8s_pipeline.yaml"
     )

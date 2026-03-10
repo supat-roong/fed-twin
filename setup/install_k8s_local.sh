@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# install_local.sh — Bootstraps the full Federated Digital Twin stack on a local kind cluster
+# install_k8s_local.sh — Bootstraps the full Federated Digital Twin stack on a local kind cluster
 # Prerequisites: kind, kubectl, docker
 
 set -euo pipefail
@@ -21,7 +21,7 @@ if kind get clusters | grep -q "$CLUSTER_NAME"; then
 else
     echo "📦 Creating Kind cluster '$CLUSTER_NAME'..."
     SCRIPT_DIR=$(dirname "$0")
-    kind create cluster --config "${SCRIPT_DIR}/kind-cluster.yaml"
+    kind create cluster --name "$CLUSTER_NAME" --config "${SCRIPT_DIR}/kind-k8s-cluster.yaml"
 fi
 
 # 2. Install Kubeflow Training Operator (if not present)
@@ -49,9 +49,10 @@ else
     echo "✅ KFP already installed."
 fi
 
-# 4. Build & Load Image
-echo "🐳 Building Docker Image..."
+# 4. Build & Load Images
+echo "🐳 Building Docker Images..."
 docker build -t "$IMAGE_NAME" -f docker/Dockerfile.app .
+docker build -t local-mlflow-boto3:v2.12.2 -f docker/Dockerfile.mlflow .
 
 # Get the Image ID to check if it's already in Kind
 LOCAL_IMAGE_ID=$(docker image inspect "$IMAGE_NAME" --format '{{.Id}}' | cut -d':' -f2 | cut -c1-12)
@@ -60,8 +61,9 @@ KIND_IMAGE_ID=$(docker exec "$CLUSTER_NAME-control-plane" crictl images 2>/dev/n
 if [ "$LOCAL_IMAGE_ID" == "${KIND_IMAGE_ID:0:12}" ] && [ -n "$KIND_IMAGE_ID" ]; then
     echo "✅ Image '$IMAGE_NAME' already exists in Kind and matches local version ($LOCAL_IMAGE_ID)."
 else
-    echo "🚚 Loading Image into Cluster ($LOCAL_IMAGE_ID)..."
+    echo "🚚 Loading Images into Cluster ($LOCAL_IMAGE_ID)..."
     kind load docker-image "$IMAGE_NAME" --name "$CLUSTER_NAME"
+    kind load docker-image local-mlflow-boto3:v2.12.2 --name "$CLUSTER_NAME"
 fi
 
 # 5. Permissions & Image Fix

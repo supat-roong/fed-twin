@@ -14,6 +14,7 @@ def setup_mlflow():
     run_id = os.getenv("MLFLOW_RUN_ID")
 
     mlflow.set_tracking_uri(tracking_uri)
+    print(f"MLflow Setup: Tracking URI={tracking_uri}")
     mlflow.set_experiment(experiment_name)
 
     # Configure S3 for artifacts if running in K8s

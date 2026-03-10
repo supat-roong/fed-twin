@@ -1,5 +1,6 @@
 .PHONY: install install-dev test test-cov coverage lint fmt type-check clean build-images \
-        local-setup local-teardown compile-pipeline run-pipeline clean-results
+        k8s-setup k8s-teardown karmada-setup karmada-teardown compile-pipeline run-pipeline \
+        clean-results
 
 # ---- Deps ----
 install:
@@ -28,12 +29,19 @@ fmt:
 type-check:
 	uv run mypy src/
 
-# ---- Local k8s ----
-local-setup:
-	bash setup/install_local.sh
+# ---- Single Cluster k8s ----
+k8s-setup:
+	bash setup/install_k8s_local.sh
 
-local-teardown:
-	bash setup/teardown_local.sh
+k8s-teardown:
+	bash setup/teardown_k8s_local.sh
+
+# ---- Karmada Multi-Cluster ----
+karmada-setup:
+	bash setup/install_karmada_local.sh
+
+karmada-teardown:
+	bash setup/teardown_karmada_local.sh
 
 # ---- Docker ----
 build-images:
@@ -44,11 +52,10 @@ load-images:
 
 # ---- Pipeline ----
 compile-pipeline:
-	uv run python src/pipelines/fl_pipeline.py
-	@echo "Compiled FL pipeline"
+	uv run python src/pipelines/fl_k8s_pipeline.py
 
 run-pipeline:
-	bash run_pipeline.sh $(ARGS)
+	uv run python src/automate_run.py fl_k8s
 # Usage: make run-pipeline ARGS="single" or make run-pipeline ARGS="all"
 
 # ---- Misc tools ----

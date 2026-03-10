@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# teardown_local.sh — Destroys the Federated Digital Twin local kind cluster
+# teardown_k8s_local.sh — Destroys the Federated Digital Twin local kind cluster
 
 set -euo pipefail
 

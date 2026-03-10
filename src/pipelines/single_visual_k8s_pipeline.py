@@ -203,5 +203,5 @@ def single_twin_visual_pipeline(
 
 if __name__ == "__main__":
     compiler.Compiler().compile(
-        single_twin_visual_pipeline, "pipeline_specs/single_visual_pipeline.yaml"
+        single_twin_visual_pipeline, "pipeline_specs/single_visual_k8s_pipeline.yaml"
     )

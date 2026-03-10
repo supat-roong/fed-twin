@@ -114,7 +114,7 @@ When these insights are **aggregated**, the global model learns:
 This project implements two distinct pipeline strategies to explore different aspects of the ML lifecycle:
 
 ### 1. Functional Pipelines (The "Workhorse")
-*   **Files**: `fl_pipeline.py`, `single_pipeline.py`
+*   **Files**: `fl_k8s_pipeline.py`, `single_k8s_pipeline.py`
 *   **Implementation**: Uses a single `PyTorchJob` Custom Resource from the Kubeflow Training Operator.
 *   **Why use it**: This is the efficient way to run experiments. Instead of launching individual pods for every round, the entire fleet orchestration is delegated to the Training Operator. It handles distributed synchronization natively, making it much faster.
 *   **UI Representation**: Shows as a single, clean "Training" node in the Kubeflow graph.
@@ -203,7 +203,7 @@ You can setup the local `kind` cluster and deploy the infrastructure using `make
 
 ```bash
 # Setup the local Kind cluster and Kubeflow dependencies
-make local-setup
+make k8s-setup
 ```
 
 ### 3. Pipeline Execution
@@ -219,7 +219,7 @@ make run-pipeline ARGS="single_visual"  # Run single agent with DAG visualizatio
 ### 4. Teardown
 To destroy the local cluster, you can run:
 ```bash
-make local-teardown
+make k8s-teardown
 ```
 
 ---

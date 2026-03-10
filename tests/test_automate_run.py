@@ -13,7 +13,7 @@ import automate_run
 @patch("kfp.Client")
 @patch("os.system")
 @patch("os.path.exists")
-@patch("sys.argv", ["automate_run.py", "fl"])
+@patch("sys.argv", ["automate_run.py", "fl_k8s"])
 @patch("automate_run.time.time", return_value=1773010000)
 @patch("automate_run.time.sleep")
 @patch("builtins.open", new_callable=mock_open)
@@ -59,7 +59,7 @@ def test_run_experiment_fl_success(
 
     # Verify
     mock_kfp_client.assert_called_once_with(host="http://localhost:8080")
-    mock_system.assert_called_with("python src/pipelines/fl_pipeline.py")
+    mock_system.assert_called_with(f"{sys.executable} src/pipelines/fl_k8s_pipeline.py")
     mock_client_instance.create_run_from_pipeline_package.assert_called_once()
     # Check that it passed the mlflow run id
     args = mock_client_instance.create_run_from_pipeline_package.call_args.kwargs
@@ -69,7 +69,7 @@ def test_run_experiment_fl_success(
 
 @patch("automate_run.mlflow")
 @patch("kfp.Client", side_effect=Exception("Connection failed"))
-@patch("sys.argv", ["automate_run.py", "fl"])
+@patch("sys.argv", ["automate_run.py", "fl_k8s"])
 def test_run_experiment_connection_failed(mock_kfp_client, mock_mlflow):
     # Execute (should not raise)
     automate_run.run_experiment()
@@ -79,7 +79,7 @@ def test_run_experiment_connection_failed(mock_kfp_client, mock_mlflow):
 @patch("automate_run.mlflow")
 @patch("kfp.Client")
 @patch("os.system", return_value=1)  # Compilation fails
-@patch("sys.argv", ["automate_run.py", "fl"])
+@patch("sys.argv", ["automate_run.py", "fl_k8s"])
 def test_run_experiment_compilation_failed(mock_system, mock_kfp_client, mock_mlflow):
     with pytest.raises(SystemExit) as e:
         automate_run.run_experiment()
@@ -90,7 +90,7 @@ def test_run_experiment_compilation_failed(mock_system, mock_kfp_client, mock_ml
 @patch("kfp.Client")
 @patch("os.system", return_value=0)
 @patch("os.path.exists", return_value=False)  # YAML missing
-@patch("sys.argv", ["automate_run.py", "fl"])
+@patch("sys.argv", ["automate_run.py", "fl_k8s"])
 def test_run_experiment_yaml_missing(
     mock_exists, mock_system, mock_kfp_client, mock_mlflow
 ):
@@ -116,7 +116,7 @@ def test_run_experiment_invalid_type(
 @patch("kfp.Client")
 @patch("os.system", return_value=0)
 @patch("os.path.exists", return_value=True)
-@patch("sys.argv", ["automate_run.py", "fl"])
+@patch("sys.argv", ["automate_run.py", "fl_k8s"])
 @patch("automate_run.time.sleep")
 @patch(
     "automate_run.time.time",

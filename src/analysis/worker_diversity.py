@@ -33,6 +33,23 @@ def plot_worker_diversity(fl_file=None):
     print(f"Analyzing Worker Diversity in: {fl_file}")
     df = pd.read_csv(fl_file)
 
+    # Guard: ensure numeric columns exist
+    for col in ["reward", "loss", "round"]:
+        if col not in df.columns:
+            print(f"Error: Column '{col}' missing from {fl_file}. Skipping.")
+            return
+
+    df["reward"] = pd.to_numeric(df["reward"], errors="coerce")
+    df["loss"] = pd.to_numeric(df["loss"], errors="coerce")
+    df["round"] = pd.to_numeric(df["round"], errors="coerce")
+    df = df.dropna(subset=["reward", "loss", "round"])
+
+    if df.empty:
+        print(
+            f"Warning: No valid numeric metrics in {fl_file}. Skipping worker diversity plot."
+        )
+        return
+
     # Filter data
     train_df = df[df["mode"] == "TRAIN"].copy()
     eval_df = df[df["mode"] == "EVAL"].copy()

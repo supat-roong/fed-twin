@@ -237,13 +237,13 @@ def visual_fl_pipeline(
         current_model = agg.outputs['output_model']
 
 if __name__ == "__main__":
-    compiler.Compiler().compile(visual_fl_pipeline, "pipeline_specs/fl_visual_pipeline.yaml")
+    compiler.Compiler().compile(visual_fl_pipeline, "pipeline_specs/fl_visual_k8s_pipeline.yaml")
 """
 
-    with open("src/pipelines/fl_visual_pipeline.py", "w") as f:
+    with open("src/pipelines/fl_visual_k8s_pipeline.py", "w") as f:
         f.write(code)
 
-    print("Generated src/pipelines/fl_visual_pipeline.py")
+    print("Generated src/pipelines/fl_visual_k8s_pipeline.py")
 
 
 if __name__ == "__main__":
