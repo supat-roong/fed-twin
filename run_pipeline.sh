@@ -78,11 +78,9 @@ done
 # Run Logic
 if [ "$PIPELINE_ARG" == "all_k8s" ]; then
     echo "🔁 Running ALL K8s pipelines..."
-    # Ensure generated pipelines are ready
-    if [ ! -f "src/pipelines/fl_visual_k8s_pipeline.py" ]; then
-          echo "⚠️ fl_visual_k8s_pipeline.py missing. Generating..."
-          uv run python src/pipelines/generate_visual_pipeline.py
-    fi
+    # Ensure generated pipelines are ready and up-to-date with config
+    echo "⚠️ Generating/Updating fl_visual_k8s_pipeline.py..."
+    uv run python src/pipelines/generate_fl_visual_pipeline.py
 
     # Order: Single -> Single Visual -> FL -> FL Visual
     for pt in "single_k8s" "single_visual_k8s" "fl_k8s" "fl_visual_k8s"; do
@@ -99,9 +97,10 @@ elif [ "$PIPELINE_ARG" == "all" ]; then
     echo "👉 Please use 'all-k8s' or 'all-karmada' instead."
     exit 1
 else
-    # Auto-generate if visual and missing (just in case)
-    if [ "$PIPELINE_ARG" == "fl_visual_k8s" ] && [ ! -f "src/pipelines/fl_visual_k8s_pipeline.py" ]; then
-        uv run python src/pipelines/generate_visual_pipeline.py
+    # Auto-generate if visual
+    if [ "$PIPELINE_ARG" == "fl_visual_k8s" ]; then
+        echo "⚠️ Generating/Updating fl_visual_k8s_pipeline.py..."
+        uv run python src/pipelines/generate_fl_visual_pipeline.py
     fi
 
     run_pipeline "$PIPELINE_ARG"

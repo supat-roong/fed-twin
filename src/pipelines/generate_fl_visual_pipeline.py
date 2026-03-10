@@ -42,7 +42,6 @@ def generate_pipeline_code():
     code = f"""from kfp import dsl
 from kfp import compiler
 from kfp.dsl import Input, Output, Model, Artifact
-import torch
 
 BASE_IMAGE = 'fed-twin-app:v1'
 MLFLOW_URI = 'http://mlflow-service.kubeflow:5000'
@@ -224,7 +223,7 @@ def visual_fl_pipeline(
         ).set_env_variable("MLFLOW_TRACKING_URI", MLFLOW_URI)
         
         # Global Evaluation (Eval Twin)
-        t_eval = eval_twin(
+        eval_twin(
             twin_id="eval-twin-global",
             input_model=agg.outputs['output_model'],
             local_episodes={local_episodes},

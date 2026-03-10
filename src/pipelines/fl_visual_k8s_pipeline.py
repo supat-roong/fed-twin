@@ -127,6 +127,7 @@ def eval_twin(
 def aggregate_models(
     model_0: Input[Model],
     model_1: Input[Model],
+    model_2: Input[Model],
     output_model: Output[Model],
     round_num: int,
     run_name: str,
@@ -140,7 +141,7 @@ def aggregate_models(
     os.environ["MLFLOW_EXPERIMENT_NAME"] = mlflow_exp_name
     os.environ["MLFLOW_RUN_ID"] = mlflow_run_id
     setup_mlflow()
-    paths = [model_0.path, model_1.path]
+    paths = [model_0.path, model_1.path, model_2.path]
     print(f"Aggregating {len(paths)} models for Round {round_num}")
 
     state_dicts = [torch.load(p) for p in paths]
@@ -156,7 +157,7 @@ def aggregate_models(
 
 @dsl.pipeline(
     name="Federated Visual Pipeline",
-    description="Dynamically generated visual pipeline for 2 workers.",
+    description="Dynamically generated visual pipeline for 3 workers.",
 )
 def visual_fl_pipeline(
     run_name: str = "visual_run_default",
@@ -168,7 +169,7 @@ def visual_fl_pipeline(
     ).set_env_variable("MLFLOW_TRACKING_URI", MLFLOW_URI)
     current_model = init_task.outputs["model"]
 
-    for r in range(1, 1 + 1):
+    for r in range(1, 3 + 1):
         # Parallel Training
 
         t0 = train_twin(
@@ -191,10 +192,21 @@ def visual_fl_pipeline(
             mlflow_exp_name=mlflow_exp_name,
         ).set_env_variable("MLFLOW_TRACKING_URI", MLFLOW_URI)
 
+        t2 = train_twin(
+            twin_id="train-twin-3",
+            input_model=current_model,
+            local_episodes=2,
+            round_num=r,
+            run_name=run_name,
+            mlflow_run_id=mlflow_run_id,
+            mlflow_exp_name=mlflow_exp_name,
+        ).set_env_variable("MLFLOW_TRACKING_URI", MLFLOW_URI)
+
         # Aggregation (waits for all training tasks to complete)
         agg = aggregate_models(
             model_0=t0.outputs["output_model"],
             model_1=t1.outputs["output_model"],
+            model_2=t2.outputs["output_model"],
             round_num=r,
             run_name=run_name,
             mlflow_run_id=mlflow_run_id,
