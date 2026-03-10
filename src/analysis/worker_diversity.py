@@ -24,10 +24,10 @@ def get_latest_metrics(pipeline_type):
 def plot_worker_diversity(fl_file=None):
     # We focus on the FL run because it has multiple workers
     if not fl_file:
-        fl_file = get_latest_metrics("fl")
+        fl_file = get_latest_metrics("fed_twin")
 
     if not fl_file:
-        print("Error: No Federated Learning metrics found.")
+        print("Error: No Fed-Twin metrics found.")
         return
 
     print(f"Analyzing Worker Diversity in: {fl_file}")
@@ -92,7 +92,7 @@ def plot_worker_diversity(fl_file=None):
         train_stats["mean"],
         color="blue",
         linewidth=2,
-        label="Mean Local Training Reward",
+        label="Mean Local Training Reward (Fed-Twin)",
     )
 
     # 3. Plot Global Evaluation (High Emphasis)
@@ -105,7 +105,7 @@ def plot_worker_diversity(fl_file=None):
             linewidth=4,
             marker="*",
             markersize=15,
-            label="Aggregated Global Model (Eval)",
+            label="Aggregated Fed-Twin Model (Eval)",
             path_effects=None,
         )  # gold stands out
 

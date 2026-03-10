@@ -47,7 +47,7 @@ if kind get clusters | grep -q "^$HOST_CLUSTER$"; then
 else
     echo "📦 Creating Host Kind cluster '$HOST_CLUSTER'..."
     SCRIPT_DIR=$(dirname "$0")
-    kind create cluster --name "$HOST_CLUSTER" --config "${SCRIPT_DIR}/kind-karmada-host.yaml"
+    kind create cluster --name "$HOST_CLUSTER" --config "${SCRIPT_DIR}/kind-multi-cluster-host.yaml"
 fi
 
 # 2. Check/Create Member Clusters

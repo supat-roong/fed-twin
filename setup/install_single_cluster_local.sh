@@ -21,7 +21,7 @@ if kind get clusters | grep -q "$CLUSTER_NAME"; then
 else
     echo "📦 Creating Kind cluster '$CLUSTER_NAME'..."
     SCRIPT_DIR=$(dirname "$0")
-    kind create cluster --name "$CLUSTER_NAME" --config "${SCRIPT_DIR}/kind-k8s-cluster.yaml"
+    kind create cluster --name "$CLUSTER_NAME" --config "${SCRIPT_DIR}/kind-single-cluster.yaml"
 fi
 
 # 2. Install Kubeflow Training Operator (if not present)

@@ -23,19 +23,19 @@ def get_latest_metrics(pipeline_type):
 def plot_comparison(fl_file=None, single_file=None):
     # Get the latest FL and Single metrics (checks both visual and regular)
     if not fl_file:
-        fl_file = get_latest_metrics("fl")
+        fl_file = get_latest_metrics("fed_twin")
     if not single_file:
-        single_file = get_latest_metrics("single")
+        single_file = get_latest_metrics("single_twin")
 
     if not fl_file or not single_file:
         print(
-            f"Error: Missing metrics files. Found FL: {fl_file}, Single: {single_file}"
+            f"Error: Missing metrics files. Found Fed-Twin: {fl_file}, Single-Twin: {single_file}"
         )
         return
 
     print("Comparing:")
-    print(f"  FL: {fl_file}")
-    print(f"  Single: {single_file}")
+    print(f"  Fed-Twin: {fl_file}")
+    print(f"  Single-Twin: {single_file}")
 
     # Load data
     df_fl = pd.read_csv(fl_file)
@@ -87,7 +87,7 @@ def plot_comparison(fl_file=None, single_file=None):
         marker="o",
         linewidth=3,
         markersize=8,
-        label="Federated Learning (Global)",
+        label="Fed-Twin (Global)",
         color="#2ecc71",
     )
     plt.plot(
@@ -96,13 +96,13 @@ def plot_comparison(fl_file=None, single_file=None):
         marker="s",
         linewidth=3,
         markersize=8,
-        label="Single Agent (Baseline)",
+        label="Single-Twin (Baseline)",
         color="#e74c3c",
     )
 
     # Labels and details
     plt.title(
-        "Performance Comparison: Federated vs. Single Agent",
+        "Performance Comparison: Fed-Twin vs. Single-Twin",
         fontsize=16,
         fontweight="bold",
         pad=20,

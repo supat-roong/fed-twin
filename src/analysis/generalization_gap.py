@@ -20,7 +20,7 @@ def get_latest_metrics(pipeline_type):
     return max(all_files, key=os.path.getmtime)
 
 
-def plot_generalization_gap(pipeline_type="single", metrics_file=None):
+def plot_generalization_gap(pipeline_type="single_twin", metrics_file=None):
     """
     Plots the generalization gap: evaluation on training env vs. neutral eval env.
     Shows if the model overfits to its training environment or generalizes well.

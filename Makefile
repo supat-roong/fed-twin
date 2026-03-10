@@ -1,5 +1,5 @@
 .PHONY: install install-dev test test-cov coverage lint fmt type-check clean build-images \
-        single-cluster-setup single-cluster-teardown multi-cluster-setup multi-cluster-teardown compile-pipeline run-pipeline \
+        single-cluster-setup single-cluster-teardown multi-cluster-setup multi-cluster-teardown compile-pipeline compile-all run-pipeline \
         clean-results
 
 # ---- Deps ----
@@ -48,15 +48,16 @@ build-images:
 	docker build -t fed-twin-app:v1 -f docker/Dockerfile.app .
 
 load-images:
-	kind load docker-image fed-twin-app:v1 --name fed-twin-cluster
+	kind load docker-image fed-twin-app:v1 --name single-cluster
 
 # ---- Pipeline ----
+# Use ARGS to specify which pipeline to compile, e.g., make compile-pipeline ARGS=single_twin_single_cluster
+ARGS ?= fed_twin_single_cluster
 compile-pipeline:
-	uv run python src/pipelines/fed_twin_single_cluster_pipeline.py
+	uv run python src/pipelines/$(ARGS)_pipeline.py
 
 run-pipeline:
-	uv run python src/automate_run.py fed_twin_single_cluster
-# Usage: make run-pipeline ARGS="single" or make run-pipeline ARGS="all"
+	bash run_pipeline.sh $(ARGS)
 
 # ---- Misc tools ----
 clean:

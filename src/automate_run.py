@@ -9,7 +9,7 @@ CLIENT_HOST = "http://localhost:8080"
 
 def run_experiment():
     # Detect Pipeline Choice
-    pipeline_type = "fl_k8s"
+    pipeline_type = "fed_twin_single_cluster"
     if len(sys.argv) > 1:
         pipeline_type = sys.argv[1].lower()
 
@@ -125,7 +125,7 @@ def run_experiment():
 
         # Build per-cluster kubeconfigs for Karmada log streaming
         member_kubeconfigs_json = "{}"
-        if pipeline_type in ["fl_karmada", "single_karmada"]:
+        if pipeline_type in ["fed_twin_multi_cluster", "single_twin_multi_cluster"]:
             import subprocess as _sp
 
             member_configs = {}
@@ -200,12 +200,12 @@ def run_experiment():
         # Define strings dynamically instead of variables to prevent NameError
         k_config = (
             open(os.path.expanduser("~/.karmada/karmada-apiserver.config")).read()
-            if pipeline_type in ["fl_karmada", "single_karmada"]
+            if pipeline_type in ["fed_twin_multi_cluster", "single_twin_multi_cluster"]
             else ""
         )
         m_configs = (
             member_kubeconfigs_json
-            if pipeline_type in ["fl_karmada", "single_karmada"]
+            if pipeline_type in ["fed_twin_multi_cluster", "single_twin_multi_cluster"]
             else "{}"
         )
 
