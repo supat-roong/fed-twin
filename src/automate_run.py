@@ -112,11 +112,10 @@ def run_experiment():
     try:
         # Build per-cluster kubeconfigs for Karmada log streaming
         import json
+
         try:
             with open(
-                os.path.join(
-                    os.path.dirname(__file__), "..", "config", "config.json"
-                ),
+                os.path.join(os.path.dirname(__file__), "..", "config", "config.json"),
                 "r",
             ) as f:
                 _cfg = json.load(f)
@@ -199,36 +198,72 @@ def run_experiment():
             member_kubeconfigs_json = json.dumps(member_configs)
 
         # Define strings dynamically instead of variables to prevent NameError
-        k_config = open(os.path.expanduser("~/.karmada/karmada-apiserver.config")).read() if pipeline_type in ["fl_karmada", "single_karmada"] else ""
-        m_configs = member_kubeconfigs_json if pipeline_type in ["fl_karmada", "single_karmada"] else "{}"
+        k_config = (
+            open(os.path.expanduser("~/.karmada/karmada-apiserver.config")).read()
+            if pipeline_type in ["fl_karmada", "single_karmada"]
+            else ""
+        )
+        m_configs = (
+            member_kubeconfigs_json
+            if pipeline_type in ["fl_karmada", "single_karmada"]
+            else "{}"
+        )
 
         if pipeline_type in ["fl_karmada", "single_karmada"]:
             # Create Kubernetes secret directly to bypass KFP parameter limitations
             import tempfile
             import subprocess as _sp
+
             secret_name = f"karmconfigs-{mlflow_run_id}"
-            
-            with tempfile.NamedTemporaryFile("w") as f_k, tempfile.NamedTemporaryFile("w") as f_m:
+
+            with (
+                tempfile.NamedTemporaryFile("w") as f_k,
+                tempfile.NamedTemporaryFile("w") as f_m,
+            ):
                 f_k.write(k_config)
                 f_k.flush()
                 f_m.write(m_configs)
                 f_m.flush()
-                
+
                 print(f"Creating Kubernetes secret {secret_name} for configs...")
-                _sp.run(["kubectl", "delete", "secret", secret_name, "-n", "kubeflow", "--ignore-not-found"], check=False)
-                _sp.run([
-                    "kubectl", "create", "secret", "generic", secret_name,
-                    f"--from-file=karmada={f_k.name}",
-                    f"--from-file=members={f_m.name}",
-                    "-n", "kubeflow"
-                ], check=True)
+                _sp.run(
+                    [
+                        "kubectl",
+                        "delete",
+                        "secret",
+                        secret_name,
+                        "-n",
+                        "kubeflow",
+                        "--ignore-not-found",
+                    ],
+                    check=False,
+                )
+                _sp.run(
+                    [
+                        "kubectl",
+                        "create",
+                        "secret",
+                        "generic",
+                        secret_name,
+                        f"--from-file=karmada={f_k.name}",
+                        f"--from-file=members={f_m.name}",
+                        "-n",
+                        "kubeflow",
+                    ],
+                    check=True,
+                )
 
         import yaml
+
         expected_params = set()
         try:
             with open(cfg["yaml"], "r") as f:
                 yaml_content = yaml.safe_load(f)
-                input_defs = yaml_content.get("root", {}).get("inputDefinitions", {}).get("parameters", {})
+                input_defs = (
+                    yaml_content.get("root", {})
+                    .get("inputDefinitions", {})
+                    .get("parameters", {})
+                )
                 expected_params = set(input_defs.keys())
         except Exception as e:
             print(f"Warning: Could not parse {cfg['yaml']}: {e}")
@@ -248,7 +283,7 @@ def run_experiment():
             final_args = {k: v for k, v in all_args.items() if k in expected_params}
         else:
             final_args = all_args
-            
+
         print(f"Passing arguments: {list(final_args.keys())}")
 
         run = client.create_run_from_pipeline_package(

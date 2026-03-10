@@ -210,7 +210,9 @@ spec:
     # Training twins log TRAIN + EVAL. Eval twin logs only EVAL.
     expected_metrics = (fl_rounds * num_workers * 2) + (fl_rounds * 1)
 
-    print(f"Monitor started for {job_name}. Parsing atomic metrics... Expecting {expected_metrics} metrics.")
+    print(
+        f"Monitor started for {job_name}. Parsing atomic metrics... Expecting {expected_metrics} metrics."
+    )
     try:
         for line in process.stdout:
             line_count += 1
@@ -302,7 +304,9 @@ spec:
                         time.sleep(10)
                         break
                     elif all_terminal:
-                        print(f"Job pods terminal but waiting for metric count ({metric_count}/{expected_metrics})...")
+                        print(
+                            f"Job pods terminal but waiting for metric count ({metric_count}/{expected_metrics})..."
+                        )
                     else:
                         print(
                             f"Job marked Succeeded but pods still running: {pod_phases}. Continuing to stream..."
@@ -317,7 +321,9 @@ spec:
         )
 
         if not job_completed:
-            print("[WARNING] Warning: Log streaming ended before job completion was confirmed")
+            print(
+                "[WARNING] Warning: Log streaming ended before job completion was confirmed"
+            )
 
         # Final verification: check if we got expected number of metrics
         if metric_count < expected_metrics * 0.8:  # Allow 20% tolerance

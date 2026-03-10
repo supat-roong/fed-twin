@@ -269,7 +269,9 @@ spec:
                         time.sleep(10)
                         break
                     elif all_terminal:
-                        print(f"Job pods terminal but waiting for metric count ({metric_count}/{expected_metrics})...")
+                        print(
+                            f"Job pods terminal but waiting for metric count ({metric_count}/{expected_metrics})..."
+                        )
                     else:
                         print(
                             f"Job marked Succeeded but pods still running: {pod_phases}. Continuing to stream..."
@@ -279,7 +281,9 @@ spec:
         print(f"Log streaming finished. Total metrics captured: {metric_count}")
 
         if not job_completed:
-            print("[WARNING] Warning: Log streaming ended before job completion was confirmed")
+            print(
+                "[WARNING] Warning: Log streaming ended before job completion was confirmed"
+            )
 
         # Final verification: check if we got expected number of metrics
         if metric_count < expected_metrics * 0.8:  # Allow 20% tolerance

@@ -185,6 +185,43 @@ spec:
 
     job_name = f"single-job-{job_id}"
 
+    # Fetch Configs via Kubernetes Secret created by automate_run.py
+    import base64 as _b64
+
+    secret_name = f"karmconfigs-{mlflow_run_id}"
+    print(f"Fetching Karmada configs from secret: {secret_name}")
+    try:
+        karmada_b64 = subprocess.check_output(
+            [
+                kubectl_path,
+                "get",
+                "secret",
+                secret_name,
+                "-n",
+                "kubeflow",
+                "-o",
+                "jsonpath={.data.karmada}",
+            ]
+        ).decode("utf-8")
+        members_b64 = subprocess.check_output(
+            [
+                kubectl_path,
+                "get",
+                "secret",
+                secret_name,
+                "-n",
+                "kubeflow",
+                "-o",
+                "jsonpath={.data.members}",
+            ]
+        ).decode("utf-8")
+    except Exception as e:
+        print(f"Failed to fetch secrets: {e}")
+        raise e
+
+    karmada_config = _b64.b64decode(karmada_b64).decode("utf-8")
+    member_kubeconfigs = _b64.b64decode(members_b64).decode("utf-8")
+
     # Extract host cluster IPv4
     import json as _json_pre
     import re as _re
@@ -251,24 +288,6 @@ spec:
         with open("/tmp/worker.yaml", "a") as f:
             f.write(worker_manifest + "\n---\n")
 
-    # Fetch Configs via Kubernetes Secret created by automate_run.py
-    import base64 as _b64
-    secret_name = f"karmconfigs-{mlflow_run_id}"
-    print(f"Fetching Karmada configs from secret: {secret_name}")
-    try:
-        karmada_b64 = subprocess.check_output(
-            [kubectl_path, "get", "secret", secret_name, "-n", "kubeflow", "-o", "jsonpath={.data.karmada}"]
-        ).decode("utf-8")
-        members_b64 = subprocess.check_output(
-            [kubectl_path, "get", "secret", secret_name, "-n", "kubeflow", "-o", "jsonpath={.data.members}"]
-        ).decode("utf-8")
-    except Exception as e:
-        print(f"Failed to fetch secrets: {e}")
-        raise e
-
-    karmada_config = _b64.b64decode(karmada_b64).decode("utf-8")
-    member_kubeconfigs = _b64.b64decode(members_b64).decode("utf-8")
-
     kubeconfig_data = karmada_config.replace(
         "https://127.0.0.1:32443",
         "https://karmada-apiserver.karmada-system.svc.cluster.local:5443",
@@ -309,7 +328,6 @@ spec:
 
     # Metrics Scraping (Reuse robust FL logic)
     import json as _json
-    import select
 
     metric_pattern = re.compile(
         r"Twin ([\w-]+)\s+\[Round (\d+)\]\s+\[METRIC\]\s+(\S+)\s+Reward:\s+([-\d.]+)\s+Loss:\s+([-\d.]+)"
@@ -370,7 +388,10 @@ spec:
     # Training twin logs TRAIN + EVAL. Eval twin logs only EVAL.
     expected = (fl_rounds * 1 * 2) + (fl_rounds * 1)
 
-    print(f"Monitoring Single training... (expecting {expected} metrics from {total_pods} pods)", flush=True)
+    print(
+        f"Monitoring Single training... (expecting {expected} metrics from {total_pods} pods)",
+        flush=True,
+    )
     import queue
     import threading
 
@@ -401,7 +422,10 @@ spec:
             # Detect pods finishing — each pod prints this exactly once
             if "finished. Idling" in line:
                 idle_signals += 1
-                print(f"[FINISH] Idle signal {idle_signals}/{total_pods} received.", flush=True)
+                print(
+                    f"[FINISH] Idle signal {idle_signals}/{total_pods} received.",
+                    flush=True,
+                )
 
             # Atomic Match
             match = metric_pattern.search(line)
@@ -419,25 +443,31 @@ spec:
 
                 if metric_count % 10 == 0 or metric_count <= 5:
                     print(
-                        f"[OK] Metric #{metric_count}: R={rd}, Twin={twin_id}, Mode={mode}, Rew={reward}", flush=True
+                        f"[OK] Metric #{metric_count}: R={rd}, Twin={twin_id}, Mode={mode}, Rew={reward}",
+                        flush=True,
                     )
 
             # Exit 1: all pods signalled they are done AND expected metrics are captured
             if idle_signals >= total_pods and metric_count >= expected:
                 print(
-                    f"[SUCCESS] All {total_pods} pods finished and expected metrics ({metric_count}/{expected}) captured. Finishing.", flush=True
+                    f"[SUCCESS] All {total_pods} pods finished and expected metrics ({metric_count}/{expected}) captured. Finishing.",
+                    flush=True,
                 )
                 break
 
             # Exit 3: short stall — no new metrics for 30s after we already have some
             if metric_count > 0 and (time.time() - last_metric_time) > 45:
                 print(
-                    f"[WARNING] No new metrics for 45s (got {metric_count}/{expected}). Training likely done.", flush=True
+                    f"[WARNING] No new metrics for 45s (got {metric_count}/{expected}). Training likely done.",
+                    flush=True,
                 )
                 break
 
         else:
-            print(f"[WARNING] Timeout reached after 1 hour (got {metric_count}/{expected})", flush=True)
+            print(
+                f"[WARNING] Timeout reached after 1 hour (got {metric_count}/{expected})",
+                flush=True,
+            )
     except Exception as e:
         print(f"Monitor error: {e}", flush=True)
     finally:

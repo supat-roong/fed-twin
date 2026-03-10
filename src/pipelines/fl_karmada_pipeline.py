@@ -185,6 +185,42 @@ spec:
 
     job_name = f"fl-job-{job_id}"
 
+    import base64 as _b64
+
+    secret_name = f"karmconfigs-{mlflow_run_id}"
+    print(f"Fetching Karmada configs from secret: {secret_name}")
+    try:
+        karmada_b64 = subprocess.check_output(
+            [
+                kubectl_path,
+                "get",
+                "secret",
+                secret_name,
+                "-n",
+                "kubeflow",
+                "-o",
+                "jsonpath={.data.karmada}",
+            ]
+        ).decode("utf-8")
+        members_b64 = subprocess.check_output(
+            [
+                kubectl_path,
+                "get",
+                "secret",
+                secret_name,
+                "-n",
+                "kubeflow",
+                "-o",
+                "jsonpath={.data.members}",
+            ]
+        ).decode("utf-8")
+    except Exception as e:
+        print(f"Failed to fetch secrets: {e}")
+        raise e
+
+    karmada_config = _b64.b64decode(karmada_b64).decode("utf-8")
+    member_kubeconfigs = _b64.b64decode(members_b64).decode("utf-8")
+
     # Extract host cluster IPv4 from member_kubeconfigs (already injected there)
     import json as _json_pre
     import re as _re
@@ -252,24 +288,6 @@ spec:
         with open("/tmp/worker.yaml", "a") as f:
             f.write(worker_manifest + "\n---\n")
 
-    import base64 as _b64
-
-    secret_name = f"karmconfigs-{mlflow_run_id}"
-    print(f"Fetching Karmada configs from secret: {secret_name}")
-    try:
-        karmada_b64 = subprocess.check_output(
-            [kubectl_path, "get", "secret", secret_name, "-n", "kubeflow", "-o", "jsonpath={.data.karmada}"]
-        ).decode("utf-8")
-        members_b64 = subprocess.check_output(
-            [kubectl_path, "get", "secret", secret_name, "-n", "kubeflow", "-o", "jsonpath={.data.members}"]
-        ).decode("utf-8")
-    except Exception as e:
-        print(f"Failed to fetch secrets: {e}")
-        raise e
-
-    karmada_config = _b64.b64decode(karmada_b64).decode("utf-8")
-    member_kubeconfigs = _b64.b64decode(members_b64).decode("utf-8")
-
     kubeconfig_data = karmada_config.replace(
         "https://127.0.0.1:32443",
         "https://karmada-apiserver.karmada-system.svc.cluster.local:5443",
@@ -312,7 +330,6 @@ spec:
 
     # --- Real-time Metrics Collection via kubectl per-cluster ---
     import json as _json
-    import select
 
     # Atomic Metric Regex matching client.py log format:
     # e.g. "Twin twin-1 [Round 1] [METRIC] TRAIN Reward: 5.2 Loss: 0.3"
@@ -348,7 +365,10 @@ spec:
         kube_paths["host"] = "/tmp/karmada.config"
 
     # Wait for pods to be at least partially running before streaming
-    print(f"Waiting for worker pods to start (label: app={job_name}-worker)...", flush=True)
+    print(
+        f"Waiting for worker pods to start (label: app={job_name}-worker)...",
+        flush=True,
+    )
     time.sleep(15)
 
     log_streams = []
@@ -423,7 +443,10 @@ spec:
             # Detect pods finishing — each pod prints this exactly once
             if "finished. Idling" in line:
                 idle_signals += 1
-                print(f"[FINISH] Idle signal {idle_signals}/{total_pods} received.", flush=True)
+                print(
+                    f"[FINISH] Idle signal {idle_signals}/{total_pods} received.",
+                    flush=True,
+                )
 
             match = metric_pattern.search(line)
             if match:
@@ -439,25 +462,31 @@ spec:
 
                 if metric_count % 10 == 0 or metric_count <= 5:
                     print(
-                        f"  [OK] Captured {metric_count} metrics. Latest: R={rd} T={twin_id} mode={csv_mode}", flush=True
+                        f"  [OK] Captured {metric_count} metrics. Latest: R={rd} T={twin_id} mode={csv_mode}",
+                        flush=True,
                     )
 
             # Exit 1: all pods signalled they are done AND expected metrics are captured
             if idle_signals >= total_pods and metric_count >= expected:
                 print(
-                    f"[SUCCESS] All {total_pods} pods finished and expected metrics ({metric_count}/{expected}) captured. Finishing.", flush=True
+                    f"[SUCCESS] All {total_pods} pods finished and expected metrics ({metric_count}/{expected}) captured. Finishing.",
+                    flush=True,
                 )
                 break
 
             # Exit 3: short stall — no new metrics for 45s after we already have some
             if metric_count > 0 and (time.time() - last_metric_time) > 45:
                 print(
-                    f"[WARNING] No new metrics for 45s (got {metric_count}/{expected}). Training likely done.", flush=True
+                    f"[WARNING] No new metrics for 45s (got {metric_count}/{expected}). Training likely done.",
+                    flush=True,
                 )
                 break
 
         else:
-            print(f"[WARNING] Timeout reached after 1 hour (got {metric_count}/{expected})", flush=True)
+            print(
+                f"[WARNING] Timeout reached after 1 hour (got {metric_count}/{expected})",
+                flush=True,
+            )
     except Exception as e:
         print(f"Monitor error: {e}", flush=True)
     finally:
@@ -496,7 +525,7 @@ def fed_twin_karmada_pipeline(
 
     job_id = str(int(time.time()))
 
-    task = train_federated_karmada(
+    train_federated_karmada(
         namespace=namespace,
         fl_rounds=fl_rounds,
         num_workers=num_workers,
@@ -506,7 +535,9 @@ def fed_twin_karmada_pipeline(
         run_name=run_name,
         mlflow_run_id=mlflow_run_id,
         mlflow_exp_name=mlflow_exp_name,
-    ).set_env_variable("MLFLOW_TRACKING_URI", "http://fed-twin-host-control-plane:30500")
+    ).set_env_variable(
+        "MLFLOW_TRACKING_URI", "http://fed-twin-host-control-plane:30500"
+    )
 
 
 if __name__ == "__main__":
