@@ -109,6 +109,24 @@ When these insights are **aggregated**, the global model learns:
 
 ---
 
+## 🌍 Deployment Modes: Single-Cluster vs. Multi-Cluster (Karmada)
+
+This project supports two primary deployment topologies to accurately simulate digital twin environments at different scales:
+
+### 1. Single Cluster (Local K8s / Kind)
+*   **What it is:** All federated workers and the central aggregator run within the same Kubernetes cluster (e.g., a single `kind` cluster) under identical networking conditions.
+*   **Real Use Case:** Simulates multiple interconnected digital twins operating within the same physical location (e.g., multiple machines on the floor of a single smart factory, or a fleet of autonomous robots coordinating within one warehouse). It's also ideal for rapid prototyping and CI/CD before scaling to a Multi-Cluster deployment.
+*   **Setup Command:** `make k8s-setup`
+*   **Run Command:** `./run_pipeline.sh all_k8s`
+
+### 2. Multi-Cluster (Karmada Federation)
+*   **What it is:** True distributed federation using [Karmada](https://karmada.io/) to manage multiple distinct Kubernetes clusters. The aggregator runs on a "Host" cluster, while digital twin workers are scheduled across geographically simulated "Member" clusters.
+*   **Real Use Case:** Mimics real-world production FL where digital twins are geographically dispersed across different regions or edge locations, each with their own isolated local Kubernetes cluster (e.g., connected autonomous vehicles computing locally in different geographic zones, or separate smart factories across the globe). It forces the system to handle cross-cluster networking, latency resilience, and robust multi-cluster scheduling.
+*   **Setup Command:** `make karmada-setup`
+*   **Run Command:** `./run_pipeline.sh all_karmada`
+
+---
+
 ## 📈 Visual vs. Functional Pipelines
 
 This project implements two distinct pipeline strategies to explore different aspects of the ML lifecycle:
@@ -198,28 +216,30 @@ Both MLflow and Kubeflow Pipelines (KFP) provide specialized UIs for monitoring.
 - **Container Runtime**: Docker Desktop, Colima, or Podman.
 - **Tools**: `kubectl`, `python 3.10+`, and `uv`.
 
-### 2. Local Setup (Recommended)
-You can setup the local `kind` cluster and deploy the infrastructure using `make`:
+### 2. Local Setup
+You can setup the local development clusters and deploy the infrastructure using `make`:
 
 ```bash
-# Setup the local Kind cluster and Kubeflow dependencies
+# Setup Single-Cluster development environment
 make k8s-setup
+
+# OR Setup Multi-Cluster Karmada federation environment
+make karmada-setup
 ```
 
 ### 3. Pipeline Execution
-Run the pipelines using `make run-pipeline`:
+Run the pipelines using `run_pipeline.sh`:
 ```bash
-make run-pipeline ARGS="all"            # Run all pipelines sequentially
-make run-pipeline ARGS="single"         # Run single worker baseline
-make run-pipeline ARGS="fl"             # Run full federated fleet
-make run-pipeline ARGS="fl_visual"      # Run FL with real-time DAG visualization
-make run-pipeline ARGS="single_visual"  # Run single agent with DAG visualization
+./run_pipeline.sh all_k8s            # Run all single-cluster K8s pipelines sequentially
+./run_pipeline.sh all_karmada        # Run all multi-cluster Karmada pipelines sequentially
 ```
 
 ### 4. Teardown
-To destroy the local cluster, you can run:
+To destroy the local clusters, you can run:
 ```bash
-make k8s-teardown
+make k8s-teardown         # Teardown Single-Cluster mode
+# OR
+make karmada-teardown     # Teardown Karmada mode
 ```
 
 ---
