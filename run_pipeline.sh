@@ -16,16 +16,8 @@ run_pipeline() {
     echo "============================================"
 
     # Determine paths
-    if [ "$PIPELINE_TYPE" == "fl" ]; then
-        PIPELINE_FILE="src/pipelines/fl_k8s_pipeline.py"
-        PIPELINE_YAML="pipeline_specs/fl_k8s_pipeline.yaml"
-    elif [ "$PIPELINE_TYPE" == "single" ]; then
-        PIPELINE_FILE="src/pipelines/single_k8s_pipeline.py"
-        PIPELINE_YAML="pipeline_specs/single_k8s_pipeline.yaml"
-    else
-        PIPELINE_FILE="src/pipelines/${PIPELINE_TYPE}_pipeline.py"
-        PIPELINE_YAML="pipeline_specs/${PIPELINE_TYPE}_pipeline.yaml"
-    fi
+    PIPELINE_FILE="src/pipelines/${PIPELINE_TYPE}_pipeline.py"
+    PIPELINE_YAML="pipeline_specs/${PIPELINE_TYPE}_pipeline.yaml"
 
     echo "📄 Install dependencies & Compiling Pipeline for $PIPELINE_TYPE..."
     uv pip install kfp boto3 --quiet || echo "Warning: pip install failed"
@@ -93,7 +85,7 @@ if [ "$PIPELINE_ARG" == "all_k8s" ]; then
     fi
 
     # Order: Single -> Single Visual -> FL -> FL Visual
-    for pt in "single" "single_visual_k8s" "fl" "fl_visual_k8s"; do
+    for pt in "single_k8s" "single_visual_k8s" "fl_k8s" "fl_visual_k8s"; do
         run_pipeline "$pt"
     done
 elif [ "$PIPELINE_ARG" == "all_karmada" ]; then
@@ -122,21 +114,17 @@ uv run python src/analysis/worker_diversity.py || echo "⚠️ Could not generat
 
 # Generate generalization gap analysis for both pipeline types
 if [[ "$PIPELINE_ARG" == *"single"* ]] || [ "$PIPELINE_ARG" == "all_k8s" ] || [ "$PIPELINE_ARG" == "all_karmada" ]; then
-    if [[ "$PIPELINE_ARG" == *"karmada"* ]]; then
-        uv run python src/analysis/generalization_gap.py single_karmada || echo "⚠️ Could not generate single_karmada generalization gap"
-    elif [ "$PIPELINE_ARG" == "all_karmada" ]; then
+    if [[ "$PIPELINE_ARG" == *"karmada"* ]] || [ "$PIPELINE_ARG" == "all_karmada" ]; then
         uv run python src/analysis/generalization_gap.py single_karmada || echo "⚠️ Could not generate single_karmada generalization gap"
     else
-        uv run python src/analysis/generalization_gap.py single || echo "⚠️ Could not generate single generalization gap"
+        uv run python src/analysis/generalization_gap.py single_k8s || echo "⚠️ Could not generate single_k8s generalization gap"
     fi
 fi
 if [[ "$PIPELINE_ARG" == *"fl"* ]] || [ "$PIPELINE_ARG" == "all_k8s" ] || [ "$PIPELINE_ARG" == "all_karmada" ]; then
-    if [[ "$PIPELINE_ARG" == *"karmada"* ]]; then
-        uv run python src/analysis/generalization_gap.py fl_karmada || echo "⚠️ Could not generate fl_karmada generalization gap"
-    elif [ "$PIPELINE_ARG" == "all_karmada" ]; then
+    if [[ "$PIPELINE_ARG" == *"karmada"* ]] || [ "$PIPELINE_ARG" == "all_karmada" ]; then
         uv run python src/analysis/generalization_gap.py fl_karmada || echo "⚠️ Could not generate fl_karmada generalization gap"
     else
-        uv run python src/analysis/generalization_gap.py fl || echo "⚠️ Could not generate FL generalization gap"
+        uv run python src/analysis/generalization_gap.py fl_k8s || echo "⚠️ Could not generate FL k8s generalization gap"
     fi
 fi
 
