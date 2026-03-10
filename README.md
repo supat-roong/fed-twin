@@ -116,14 +116,14 @@ This project supports two primary deployment topologies to accurately simulate d
 ### 1. Single Cluster (Local K8s / Kind)
 *   **What it is:** All federated workers and the central aggregator run within the same Kubernetes cluster (e.g., a single `kind` cluster) under identical networking conditions.
 *   **Real Use Case:** Simulates multiple interconnected digital twins operating within the same physical location (e.g., multiple machines on the floor of a single smart factory, or a fleet of autonomous robots coordinating within one warehouse). It's also ideal for rapid prototyping and CI/CD before scaling to a Multi-Cluster deployment.
-*   **Setup Command:** `make k8s-setup`
-*   **Run Command:** `./run_pipeline.sh all_k8s`
+*   **Setup Command:** `make single-cluster-setup`
+*   **Run Command:** `./run_pipeline.sh all_single_cluster`
 
-### 2. Multi-Cluster (Karmada Federation)
+### 2. Multi-Cluster (Multi-Cluster Federation)
 *   **What it is:** True distributed federation using [Karmada](https://karmada.io/) to manage multiple distinct Kubernetes clusters. The aggregator runs on a "Host" cluster, while digital twin workers are scheduled across geographically simulated "Member" clusters.
 *   **Real Use Case:** Mimics real-world production FL where digital twins are geographically dispersed across different regions or edge locations, each with their own isolated local Kubernetes cluster (e.g., connected autonomous vehicles computing locally in different geographic zones, or separate smart factories across the globe). It forces the system to handle cross-cluster networking, latency resilience, and robust multi-cluster scheduling.
-*   **Setup Command:** `make karmada-setup`
-*   **Run Command:** `./run_pipeline.sh all_karmada`
+*   **Setup Command:** `make multi-cluster-setup`
+*   **Run Command:** `./run_pipeline.sh all_multi_cluster`
 
 ---
 
@@ -132,21 +132,21 @@ This project supports two primary deployment topologies to accurately simulate d
 This project implements two distinct pipeline strategies to explore different aspects of the ML lifecycle:
 
 ### 1. Functional Pipelines (The "Workhorse")
-*   **Files**: `fl_k8s_pipeline.py`, `single_k8s_pipeline.py`
+*   **Files**: `fed_twin_single_cluster_pipeline.py`, `single_twin_single_cluster_pipeline.py`
 *   **Implementation**: Uses a single `PyTorchJob` Custom Resource from the Kubeflow Training Operator.
 *   **Why use it**: This is the efficient way to run experiments. Instead of launching individual pods for every round, the entire fleet orchestration is delegated to the Training Operator. It handles distributed synchronization natively, making it much faster.
 *   **UI Representation**: Shows as a single, clean "Training" node in the Kubeflow graph.
 
 ### 2. Visual Pipelines (The "Narrative")
-*   **Files**: `fl_visual_pipeline.py`, `single_visual_pipeline.py`
+*   **Files**: `fed_twin_visual_single_cluster_pipeline.py`, `single_twin_visual_single_cluster_pipeline.py`
 *   **Implementation**: Creates individual KFP components for every training and evaluation step.
 *   **Why use it**: Kubeflow's default representation can be opaque. These pipelines provide **better observability** by mapping each round and worker to a unique component, making it easy to track the flow of weights and parallel training in the Kubeflow UI.
 
-#### **Federated Learning DAG (`fl_visual`)**
+#### **Federated Learning DAG (`fed_twin_visual`)**
 ![Federated DAG](assets/fl-dag.png)
 *This visualization shows multiple training pods running in parallel for each round, followed by a synchronization step where model weights are aggregated before proceeding to the next iteration.*
 
-#### **Single Agent DAG (`single_visual`)**
+#### **Single Agent DAG (`single_twin_visual`)**
 ![Single Agent DAG](assets/single-dag.png)
 *In contrast, the single agent DAG shows a linear progression of training and evaluation rounds, where a single pod learns sequentially without the need for aggregation.*
 
@@ -221,25 +221,25 @@ You can setup the local development clusters and deploy the infrastructure using
 
 ```bash
 # Setup Single-Cluster development environment
-make k8s-setup
+make single-cluster-setup
 
-# OR Setup Multi-Cluster Karmada federation environment
-make karmada-setup
+# OR Setup Multi-Cluster federation environment
+make multi-cluster-setup
 ```
 
 ### 3. Pipeline Execution
 Run the pipelines using `run_pipeline.sh`:
 ```bash
-./run_pipeline.sh all_k8s            # Run all single-cluster K8s pipelines sequentially
-./run_pipeline.sh all_karmada        # Run all multi-cluster Karmada pipelines sequentially
+./run_pipeline.sh all_single_cluster            # Run all single-cluster pipelines sequentially
+./run_pipeline.sh all_multi_cluster        # Run all multi-cluster pipelines sequentially
 ```
 
 ### 4. Teardown
 To destroy the local clusters, you can run:
 ```bash
-make k8s-teardown         # Teardown Single-Cluster mode
+make single-cluster-teardown         # Teardown Single-Cluster mode
 # OR
-make karmada-teardown     # Teardown Karmada mode
+make multi-cluster-teardown     # Teardown Multi-Cluster mode
 ```
 
 ---

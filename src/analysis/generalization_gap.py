@@ -160,7 +160,7 @@ if __name__ == "__main__":
         arg = sys.argv[1]
         if arg.endswith(".csv"):
             # helper [file] -> infer type or default
-            p_type = "fl" if "fl" in arg else "single"
+            p_type = "fed_twin" if "fed_twin" in arg else "single_twin"
             plot_generalization_gap(p_type, arg)
         else:
             # helper [type]

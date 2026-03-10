@@ -14,41 +14,41 @@ def run_experiment():
         pipeline_type = sys.argv[1].lower()
 
     pipeline_map = {
-        "fl_k8s": {
-            "file": "src/pipelines/fl_k8s_pipeline.py",
-            "yaml": "pipeline_specs/fl_k8s_pipeline.yaml",
-            "exp": "Fed-Twin-FL",
+        "fed_twin_single_cluster": {
+            "file": "src/pipelines/fed_twin_single_cluster_pipeline.py",
+            "yaml": "pipeline_specs/fed_twin_single_cluster_pipeline.yaml",
+            "exp": "Fed-Twin-Single-Cluster",
         },
-        "single_k8s": {
-            "file": "src/pipelines/single_k8s_pipeline.py",
-            "yaml": "pipeline_specs/single_k8s_pipeline.yaml",
-            "exp": "Fed-Twin-Single",
+        "single_twin_single_cluster": {
+            "file": "src/pipelines/single_twin_single_cluster_pipeline.py",
+            "yaml": "pipeline_specs/single_twin_single_cluster_pipeline.yaml",
+            "exp": "Single-Twin-Single-Cluster",
         },
-        "single_visual_k8s": {
-            "file": "src/pipelines/single_visual_k8s_pipeline.py",
-            "yaml": "pipeline_specs/single_visual_k8s_pipeline.yaml",
-            "exp": "Fed-Twin-Single-Visual",
+        "single_twin_visual_single_cluster": {
+            "file": "src/pipelines/single_twin_visual_single_cluster_pipeline.py",
+            "yaml": "pipeline_specs/single_twin_visual_single_cluster_pipeline.yaml",
+            "exp": "Single-Twin-Visual-Single-Cluster",
         },
-        "fl_visual_k8s": {
-            "file": "src/pipelines/fl_visual_k8s_pipeline.py",
-            "yaml": "pipeline_specs/fl_visual_k8s_pipeline.yaml",
-            "exp": "Fed-Twin-FL-Visual",
+        "fed_twin_visual_single_cluster": {
+            "file": "src/pipelines/fed_twin_visual_single_cluster_pipeline.py",
+            "yaml": "pipeline_specs/fed_twin_visual_single_cluster_pipeline.yaml",
+            "exp": "Fed-Twin-Visual-Single-Cluster",
         },
-        "fl_karmada": {
-            "file": "src/pipelines/fl_karmada_pipeline.py",
-            "yaml": "pipeline_specs/fl_karmada_pipeline.yaml",
-            "exp": "Fed-Twin-FL-Karmada",
+        "fed_twin_multi_cluster": {
+            "file": "src/pipelines/fed_twin_multi_cluster_pipeline.py",
+            "yaml": "pipeline_specs/fed_twin_multi_cluster_pipeline.yaml",
+            "exp": "Fed-Twin-Multi-Cluster",
         },
-        "single_karmada": {
-            "file": "src/pipelines/single_karmada_pipeline.py",
-            "yaml": "pipeline_specs/single_karmada_pipeline.yaml",
-            "exp": "Fed-Twin-Single-Karmada",
+        "single_twin_multi_cluster": {
+            "file": "src/pipelines/single_twin_multi_cluster_pipeline.py",
+            "yaml": "pipeline_specs/single_twin_multi_cluster_pipeline.yaml",
+            "exp": "Single-Twin-Multi-Cluster",
         },
     }
 
     if pipeline_type not in pipeline_map:
         print(
-            f"Unknown pipeline type: {pipeline_type}. Choose 'fl_k8s', 'single_k8s', 'single_visual_k8s', 'fl_visual_k8s', 'fl_karmada', or 'single_karmada'."
+            f"Unknown pipeline type: {pipeline_type}. Choose 'fed_twin_single_cluster', 'single_twin_single_cluster', 'single_twin_visual_single_cluster', 'fed_twin_visual_single_cluster', 'fed_twin_multi_cluster', or 'single_twin_multi_cluster'."
         )
         sys.exit(1)
 
@@ -131,7 +131,7 @@ def run_experiment():
             member_configs = {}
             # Define host cluster
             clusters_info = [
-                ("host", "fed-twin-host-control-plane", "kind-fed-twin-host")
+                ("host", "multi-cluster-host-control-plane", "kind-multi-cluster-host")
             ]
             # Read num_workers from config to deterministically generate member list
 
@@ -139,8 +139,8 @@ def run_experiment():
                 clusters_info.append(
                     (
                         f"member{i}",
-                        f"fed-twin-member{i}-control-plane",
-                        f"kind-fed-twin-member{i}",
+                        f"multi-cluster-member{i}-control-plane",
+                        f"kind-multi-cluster-member{i}",
                     )
                 )
             for cluster_key, container_name, context_name in clusters_info:
@@ -209,7 +209,7 @@ def run_experiment():
             else "{}"
         )
 
-        if pipeline_type in ["fl_karmada", "single_karmada"]:
+        if pipeline_type in ["fed_twin_multi_cluster", "single_twin_multi_cluster"]:
             # Create Kubernetes secret directly to bypass KFP parameter limitations
             import tempfile
             import subprocess as _sp

@@ -4,7 +4,7 @@
 
 set -euo pipefail
 
-CLUSTER_NAME="fed-twin-cluster"
+CLUSTER_NAME="single-cluster"
 IMAGE_NAME="fed-twin-app:v1"
 
 echo "=================================================="

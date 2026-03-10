@@ -7,8 +7,8 @@ set -euo pipefail
 source ~/.zshrc 2>/dev/null || true
 export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
 
-HOST_CLUSTER="fed-twin-host"
-MEMBER_PREFIX="fed-twin-member"
+HOST_CLUSTER="multi-cluster-host"
+MEMBER_PREFIX="multi-cluster-member"
 
 echo "🗑️ Destroying Host cluster '$HOST_CLUSTER'..."
 kind delete cluster --name "$HOST_CLUSTER" || true

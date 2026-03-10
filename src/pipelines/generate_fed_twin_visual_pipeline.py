@@ -194,13 +194,13 @@ def aggregate_models(
 
 
 @dsl.pipeline(
-    name="Federated Visual Pipeline",
+    name="Federated Twin Visual Pipeline",
     description="Dynamically generated visual pipeline for {num_workers} workers."
 )
-def visual_fl_pipeline(
+def visual_fed_twin_pipeline(
     run_name: str = "visual_run_default",
     mlflow_run_id: str = "",
-    mlflow_exp_name: str = "Fed-Twin-FL-Visual"
+    mlflow_exp_name: str = "Fed-Twin-Visual-Single-Cluster"
 ):
     init_task = initialize_model(
         run_name=run_name,
@@ -236,13 +236,13 @@ def visual_fl_pipeline(
         current_model = agg.outputs['output_model']
 
 if __name__ == "__main__":
-    compiler.Compiler().compile(visual_fl_pipeline, "pipeline_specs/fl_visual_k8s_pipeline.yaml")
+    compiler.Compiler().compile(visual_fed_twin_pipeline, "pipeline_specs/fed_twin_visual_single_cluster_pipeline.yaml")
 """
 
-    with open("src/pipelines/fl_visual_k8s_pipeline.py", "w") as f:
+    with open("src/pipelines/fed_twin_visual_single_cluster_pipeline.py", "w") as f:
         f.write(code)
 
-    print("Generated src/pipelines/fl_visual_k8s_pipeline.py")
+    print("Generated src/pipelines/fed_twin_visual_single_cluster_pipeline.py")
 
 
 if __name__ == "__main__":

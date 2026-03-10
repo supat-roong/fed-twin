@@ -1,5 +1,5 @@
 .PHONY: install install-dev test test-cov coverage lint fmt type-check clean build-images \
-        k8s-setup k8s-teardown karmada-setup karmada-teardown compile-pipeline run-pipeline \
+        single-cluster-setup single-cluster-teardown multi-cluster-setup multi-cluster-teardown compile-pipeline run-pipeline \
         clean-results
 
 # ---- Deps ----
@@ -29,19 +29,19 @@ fmt:
 type-check:
 	uv run mypy src/
 
-# ---- Single Cluster k8s ----
-k8s-setup:
-	bash setup/install_k8s_local.sh
+# ---- Single Cluster single_cluster ----
+single-cluster-setup:
+	bash setup/install_single_cluster_local.sh
 
-k8s-teardown:
-	bash setup/teardown_k8s_local.sh
+single-cluster-teardown:
+	bash setup/teardown_single_cluster_local.sh
 
-# ---- Karmada Multi-Cluster ----
-karmada-setup:
-	bash setup/install_karmada_local.sh
+# ---- multi_cluster Multi-Cluster ----
+multi-cluster-setup:
+	bash setup/install_multi_cluster_local.sh
 
-karmada-teardown:
-	bash setup/teardown_karmada_local.sh
+multi-cluster-teardown:
+	bash setup/teardown_multi_cluster_local.sh
 
 # ---- Docker ----
 build-images:
@@ -52,10 +52,10 @@ load-images:
 
 # ---- Pipeline ----
 compile-pipeline:
-	uv run python src/pipelines/fl_k8s_pipeline.py
+	uv run python src/pipelines/fed_twin_single_cluster_pipeline.py
 
 run-pipeline:
-	uv run python src/automate_run.py fl_k8s
+	uv run python src/automate_run.py fed_twin_single_cluster
 # Usage: make run-pipeline ARGS="single" or make run-pipeline ARGS="all"
 
 # ---- Misc tools ----

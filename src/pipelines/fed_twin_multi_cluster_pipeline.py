@@ -5,9 +5,10 @@ from kfp.dsl import Output, Artifact
 
 
 @dsl.component(base_image="fed-twin-app:v1")
-def train_single_karmada(
+def train_federated_karmada(
     namespace: str,
     fl_rounds: int,
+    num_workers: int,
     local_episodes: int,
     eval_episodes: int,
     job_id: str,
@@ -24,8 +25,7 @@ def train_single_karmada(
     kubectl_path = "/usr/local/bin/kubectl"
 
     # 1. Server Deployment (Master) -> Pinned to Host Cluster
-    # Even in "single", we use the server to sync weights between trainer on member1 and evaluator on host.
-    server_manifest_template = """
+    server_deployment_template = """
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -58,9 +58,9 @@ spec:
         - name: FL_ROUNDS
           value: "{{ rounds }}"
         - name: MIN_CLIENTS
-          value: "2"
+          value: "{{ num_workers + 1 }}"
         - name: MLFLOW_TRACKING_URI
-          value: "http://fed-twin-host-control-plane:30500"
+          value: "http://multi-cluster-host-control-plane:30500"
         - name: MLFLOW_EXPERIMENT_NAME
           value: "{{ mlflow_exp_name }}"
         - name: MLFLOW_RUN_ID
@@ -97,10 +97,10 @@ spec:
   placement:
     clusterAffinity:
       clusterNames:
-        - fed-twin-host
+        - multi-cluster-host
 """
 
-    worker_manifest_template = """
+    worker_deployment_template = """
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -153,7 +153,7 @@ spec:
         - name: MAX_GRAD_NORM
           value: "{{ max_grad_norm }}"
         - name: MLFLOW_TRACKING_URI
-          value: "http://fed-twin-host-control-plane:30500"
+          value: "http://multi-cluster-host-control-plane:30500"
         - name: MLFLOW_EXPERIMENT_NAME
           value: "{{ mlflow_exp_name }}"
         - name: MLFLOW_RUN_ID
@@ -183,9 +183,8 @@ spec:
         - {{ target_cluster }}
 """
 
-    job_name = f"single-job-{job_id}"
+    job_name = f"fl-job-{job_id}"
 
-    # Fetch Configs via Kubernetes Secret created by automate_run.py
     import base64 as _b64
 
     secret_name = f"karmconfigs-{mlflow_run_id}"
@@ -222,53 +221,51 @@ spec:
     karmada_config = _b64.b64decode(karmada_b64).decode("utf-8")
     member_kubeconfigs = _b64.b64decode(members_b64).decode("utf-8")
 
-    # Extract host cluster IPv4
+    # Extract host cluster IPv4 from member_kubeconfigs (already injected there)
     import json as _json_pre
     import re as _re
 
     try:
         _cfgs = _json_pre.loads(member_kubeconfigs)
         _host_kc = _cfgs.get("host", "")
+        # Extract https://IP:PORT from server field
         _ip_match = _re.search(r"https?://([\d.]+):", _host_kc)
-        host_internal_ip = (
-            _ip_match.group(1) if _ip_match else "fed-twin-host-control-plane"
-        )
+        host_internal_ip = "multi-cluster-host-control-plane"
     except Exception:
-        host_internal_ip = "fed-twin-host-control-plane"
+        host_internal_ip = "multi-cluster-host-control-plane"
+    print(f"FL Server address will be: {host_internal_ip}:32444")
 
-    print(f"Karmada Single Training Mode: Server on {host_internal_ip}:32444")
-
-    # Render Server
+    # Render and save Server
     server_manifest = (
-        server_manifest_template.replace("{{ job_name }}", job_name)
+        server_deployment_template.replace("{{ job_name }}", job_name)
         .replace("{{ rounds }}", str(fl_rounds))
         .replace("{{ namespace }}", namespace)
+        .replace("{{ num_workers + 1 }}", str(num_workers + 1))
         .replace("{{ mlflow_run_id }}", mlflow_run_id)
         .replace("{{ mlflow_exp_name }}", mlflow_exp_name)
     )
     with open("/tmp/server.yaml", "w") as f:
         f.write(server_manifest)
 
-    # Render Workers (Exactly 2: 1 Evaluator on Host, 1 Trainer on Member1)
+    # Clear worker template output file first
     with open("/tmp/worker.yaml", "w") as f:
         f.write("")
 
-    # Index 0: global-eval -> host
-    # Index 1: train-twin-1 -> member1
-    for i in range(2):
+    # Generate Deterministic Worker Deployments
+    for i in range(num_workers + 1):
         if i == 0:
             twin_id = "eval-twin-global"
             eval_only = "true"
             mode = "EVALUATION"
-            target_cluster = "fed-twin-host"
+            target_cluster = "multi-cluster-host"
         else:
-            twin_id = "train-twin-1"
+            twin_id = f"train-twin-{i}"
             eval_only = "false"
             mode = "TRAINING"
-            target_cluster = "fed-twin-member1"
+            target_cluster = f"multi-cluster-member{i}"
 
         worker_manifest = (
-            worker_manifest_template.replace("{{ job_name }}", job_name)
+            worker_deployment_template.replace("{{ job_name }}", job_name)
             .replace("{{ index }}", str(i))
             .replace("{{ twin_id }}", twin_id)
             .replace("{{ eval_only }}", eval_only)
@@ -285,6 +282,7 @@ spec:
             .replace("{{ mlflow_exp_name }}", mlflow_exp_name)
             .replace("{{ server_addr }}", host_internal_ip)
         )
+
         with open("/tmp/worker.yaml", "a") as f:
             f.write(worker_manifest + "\n---\n")
 
@@ -292,11 +290,11 @@ spec:
         "https://127.0.0.1:32443",
         "https://karmada-apiserver.karmada-system.svc.cluster.local:5443",
     )
+
     with open("/tmp/karmada.config", "w") as f:
         f.write(kubeconfig_data)
 
-    # Apply manifests
-    print("Applying Single Twin manifests to Karmada...", flush=True)
+    print("NOTE: Applying manifests to Karmada control plane...")
     subprocess.run(
         [
             kubectl_path,
@@ -326,30 +324,49 @@ spec:
         check=True,
     )
 
-    # Metrics Scraping (Reuse robust FL logic)
+    print("Workloads submitted to Karmada.")
+
+    # --- Real-time Metrics Collection via kubectl per-cluster ---
     import json as _json
 
+    # Atomic Metric Regex matching client.py log format:
+    # e.g. "Twin twin-1 [Round 1] [METRIC] TRAIN Reward: 5.2 Loss: 0.3"
     metric_pattern = re.compile(
         r"Twin ([\w-]+)\s+\[Round (\d+)\]\s+\[METRIC\]\s+(\S+)\s+Reward:\s+([-\d.]+)\s+Loss:\s+([-\d.]+)"
     )
+
+    # Prepare CSV Header
     with open(metrics.path, "w", newline="") as f:
         csv.writer(f).writerow(["round", "twin_id", "mode", "reward", "loss"])
 
+    # Load member kubeconfigs from decoded JSON string
     try:
         cluster_configs = _json.loads(member_kubeconfigs)
-    except Exception:
+    except Exception as e:
+        print(
+            f"Warning: Could not parse member_kubeconfigs: {e}. Falling back to Karmada config only."
+        )
         cluster_configs = {}
 
+    # Write each kubeconfig to /tmp/
     kube_paths = {}
     for cluster_name, kc_content in cluster_configs.items():
         kube_path = f"/tmp/kube_{cluster_name}.config"
         with open(kube_path, "w") as f:
             f.write(kc_content)
         kube_paths[cluster_name] = kube_path
+        print(f"  Cluster config written: {cluster_name} -> {kube_path}")
 
+    # If no member configs given, fall back to the Karmada kubeconfig
+    # for the host cluster (will only get server logs there)
     if not kube_paths:
         kube_paths["host"] = "/tmp/karmada.config"
 
+    # Wait for pods to be at least partially running before streaming
+    print(
+        f"Waiting for worker pods to start (label: app={job_name}-worker)...",
+        flush=True,
+    )
     time.sleep(15)
 
     log_streams = []
@@ -382,15 +399,14 @@ spec:
     start_time = time.time()
     metric_count = 0
     last_metric_time = time.time()
-    # 1 server + 1 eval worker + 1 training worker = 3 pods total
-    total_pods = 3
+    # num_workers training pods + 1 eval pod + 1 server = num_workers + 2 total pods
+    total_pods = num_workers + 2
     idle_signals = 0
-    # Training twin logs TRAIN + EVAL. Eval twin logs only EVAL.
-    expected = (fl_rounds * 1 * 2) + (fl_rounds * 1)
+    # Training twins log TRAIN + EVAL. Eval twin logs only EVAL.
+    expected = (fl_rounds * num_workers * 2) + (fl_rounds * 1)
 
     print(
-        f"Monitoring Single training... (expecting {expected} metrics from {total_pods} pods)",
-        flush=True,
+        f"Monitoring FL progress... (expecting {expected} metrics from {total_pods} pods)"
     )
     import queue
     import threading
@@ -398,6 +414,7 @@ spec:
     log_queue = queue.Queue()
 
     def stream_reader(q, stream):
+        # Iterating over the stream correctly handles buffering
         for line in stream:
             q.put(line)
 
@@ -406,11 +423,13 @@ spec:
         t.daemon = True
         t.start()
 
+    print(f"Monitoring FL training... (expecting {expected} metrics)", flush=True)
     try:
         while time.time() - start_time < 3600:
             try:
                 line = log_queue.get(timeout=2.0)
             except queue.Empty:
+                # Check if all processes ended and queue is empty
                 alive = [s for s in log_streams if s[2].poll() is None]
                 if not alive and log_queue.empty():
                     print("All log streams ended.", flush=True)
@@ -427,7 +446,6 @@ spec:
                     flush=True,
                 )
 
-            # Atomic Match
             match = metric_pattern.search(line)
             if match:
                 twin_id, rd, mode, reward, loss = match.groups()
@@ -437,13 +455,12 @@ spec:
                 metric_count += 1
                 last_metric_time = time.time()
 
-                # Write to CSV
                 with open(metrics.path, "a", newline="") as f:
                     csv.writer(f).writerow([rd, twin_id, csv_mode, reward, loss])
 
                 if metric_count % 10 == 0 or metric_count <= 5:
                     print(
-                        f"[OK] Metric #{metric_count}: R={rd}, Twin={twin_id}, Mode={mode}, Rew={reward}",
+                        f"  [OK] Captured {metric_count} metrics. Latest: R={rd} T={twin_id} mode={csv_mode}",
                         flush=True,
                     )
 
@@ -455,7 +472,7 @@ spec:
                 )
                 break
 
-            # Exit 3: short stall — no new metrics for 30s after we already have some
+            # Exit 3: short stall — no new metrics for 45s after we already have some
             if metric_count > 0 and (time.time() - last_metric_time) > 45:
                 print(
                     f"[WARNING] No new metrics for 45s (got {metric_count}/{expected}). Training likely done.",
@@ -477,34 +494,39 @@ spec:
             except Exception:
                 pass
 
+    print(f"Monitoring complete. Total metrics captured: {metric_count}")
+
 
 # Load Config Defaults
 try:
     with open("config/config.json", "r") as f:
         config_data = json.load(f)
 except FileNotFoundError:
-    config_data = {"fl_rounds": 5, "local_episodes": 5}
+    config_data = {"fl_rounds": 5, "num_workers": 3, "local_episodes": 5}
 
 
 @dsl.pipeline(
-    name="Single Twin Karmada Pipeline",
-    description="Non-federated baseline on Karmada (Member1=Trainer, Host=Evaluator)",
+    name="Federated Twin Multi-Cluster Pipeline",
+    description="Orchestrates distributed training using multi-cluster federation across multiple clusters",
 )
-def single_twin_karmada_pipeline(
+def fed_twin_multi_cluster_pipeline(
     namespace: str = "default",
     fl_rounds: int = config_data.get("fl_rounds", 5),
+    num_workers: int = config_data.get("num_workers", 3),
     local_episodes: int = config_data.get("local_episodes", 10),
     eval_episodes: int = config_data.get("eval_episodes", 20),
-    run_name: str = "single_karmada_run_default",
+    run_name: str = "fed_twin_multi_cluster_run_default",
     mlflow_run_id: str = "",
-    mlflow_exp_name: str = "Fed-Twin-Single-Karmada",
+    mlflow_exp_name: str = "Fed-Twin-Multi-Cluster",
 ):
     import time
 
     job_id = str(int(time.time()))
-    train_single_karmada(
+
+    train_federated_karmada(
         namespace=namespace,
         fl_rounds=fl_rounds,
+        num_workers=num_workers,
         local_episodes=local_episodes,
         eval_episodes=eval_episodes,
         job_id=job_id,
@@ -512,11 +534,12 @@ def single_twin_karmada_pipeline(
         mlflow_run_id=mlflow_run_id,
         mlflow_exp_name=mlflow_exp_name,
     ).set_env_variable(
-        "MLFLOW_TRACKING_URI", "http://fed-twin-host-control-plane:30500"
+        "MLFLOW_TRACKING_URI", "http://multi-cluster-host-control-plane:30500"
     )
 
 
 if __name__ == "__main__":
     compiler.Compiler().compile(
-        single_twin_karmada_pipeline, "pipeline_specs/single_karmada_pipeline.yaml"
+        fed_twin_multi_cluster_pipeline,
+        "pipeline_specs/fed_twin_multi_cluster_pipeline.yaml",
     )

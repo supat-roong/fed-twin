@@ -1,17 +1,24 @@
-import json
 from kfp import dsl
 from kfp import compiler
-from kubernetes import config
 from kfp.dsl import Output, Artifact
+import json
+
+# Reuse config if available, or defaults
+try:
+    with open("config/config.json", "r") as f:
+        config = json.load(f)
+except FileNotFoundError:
+    config = {"fl_rounds": 10, "num_workers": 1, "local_episodes": 10}
+
+print(f"Compiling Single-Twin-FL Pipeline with Config: {config}")
 
 
 @dsl.component(
     base_image="python:3.9-slim", packages_to_install=["jinja2", "requests", "pyyaml"]
 )
-def train_federated(
+def train_single_twin(
     namespace: str,
     fl_rounds: int,
-    num_workers: int,
     local_episodes: int,
     eval_episodes: int,
     job_id: str,
@@ -28,17 +35,14 @@ def train_federated(
     import csv
     from jinja2 import Template
 
-    # Install kubectl manually to /tmp since we might not have root
     kubectl_path = "/tmp/kubectl"
     if not os.path.exists(kubectl_path):
-        print("Installing kubectl...")
         url = "https://dl.k8s.io/release/v1.28.0/bin/linux/amd64/kubectl"
         response = requests.get(url)
         with open(kubectl_path, "wb") as f:
             f.write(response.content)
         os.chmod(kubectl_path, 0o755)
 
-    # Inline the PyTorchJob manifest as a template
     pytorch_job_template = """
 apiVersion: kubeflow.org/v1
 kind: PyTorchJob
@@ -62,7 +66,7 @@ spec:
             - name: FL_ROUNDS
               value: "{{ rounds }}"
             - name: MIN_CLIENTS
-              value: "{{ num_workers + 1 }}"
+              value: "2"
             - name: MLFLOW_TRACKING_URI
               value: "http://mlflow-service.kubeflow:5000"
             - name: MLFLOW_EXPERIMENT_NAME
@@ -70,7 +74,7 @@ spec:
             - name: MLFLOW_RUN_ID
               value: "{{ mlflow_run_id }}"
     Worker:
-      replicas: {{ num_workers + 1 }}
+      replicas: 2
       restartPolicy: OnFailure
       template:
         spec:
@@ -86,9 +90,8 @@ spec:
                   export EVAL_ONLY=true
                   export TWIN_ID=eval-twin-global
                 else
-                  INDEX=${HOSTNAME##*-}
-                  echo "IDENTIFIED: TRAINING TWIN #$INDEX"
-                  export TWIN_ID="train-twin-$INDEX"
+                  echo "IDENTIFIED: SINGLE TRAINING TWIN"
+                  export TWIN_ID="train-twin-1"
                 fi
                 python client.py
             env:
@@ -122,15 +125,12 @@ spec:
               value: "true"
     """
 
-    job_name = f"fl-job-{job_id}"
-
-    # Render and save
+    job_name = f"single-job-{job_id}"
     template = Template(pytorch_job_template)
     manifest = template.render(
         job_name=job_name,
         rounds=fl_rounds,
         namespace=namespace,
-        num_workers=num_workers,
         local_episodes=local_episodes,
         eval_episodes=eval_episodes,
         learning_rate=0.003,
@@ -145,28 +145,24 @@ spec:
     with open("/tmp/job.yaml", "w") as f:
         f.write(manifest)
 
-    print(f"Deploying Federated Training for {fl_rounds} rounds in {namespace}...")
-    print(f"Configuration: Workers={num_workers}, Episodes={local_episodes}")
-
-    # Apply using kubectl (available in /tmp)
+    print(f"Deploying Single Twin (via FL logic) for {fl_rounds} rounds...")
     subprocess.run(
         [kubectl_path, "apply", "-f", "/tmp/job.yaml", "--force"], check=True
     )
 
     # Start streaming logs immediately - don't wait for pods to be ready
-    # The job might complete quickly, so we need to start streaming ASAP
     print(f"Starting log stream for job {job_name}...")
-
-    # Wait just a moment for pods to start being created
-    time.sleep(5)
+    time.sleep(5)  # Brief wait for pods to start being created
 
     # Prepare CSV
     with open(metrics.path, "w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(["round", "twin_id", "mode", "reward", "loss"])
 
-    # Get ALL logs from the beginning (not just new logs)
-    # Using --since-time or --tail=-1 ensures we get everything
+    metric_pattern = re.compile(
+        r"Twin ([\w-]+)\s+\[Round (\d+)\]\s+\[METRIC\]\s+(\S+)\s+Reward:\s+([-\d.]+)\s+Loss:\s+([-\d.]+)"
+    )
+
     cmd = [
         kubectl_path,
         "logs",
@@ -176,69 +172,38 @@ spec:
         namespace,
         "--all-containers",
         "--prefix=true",
-        "--max-log-requests=20",
         "--tail=-1",
-        "-f",  # Follow for any new logs
+        "-f",
     ]
-
-    print(f"Streaming logs with command: {' '.join(cmd[:6])}...")
     process = subprocess.Popen(
         cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
     )
 
-    # Atomic Metric Regex
-    metric_pattern = re.compile(
-        r"Twin ([\w-]+)\s+\[Round (\d+)\]\s+\[METRIC\]\s+(\S+)\s+Reward:\s+([-\d.]+)\s+Loss:\s+([-\d.]+)"
-    )
-
-    # Calculate expected duration: rounds * (train + eval episodes) * ~5 sec per episode
-    # Add 50% buffer for safety. FL has more workers so slightly longer per round.
-    expected_duration = int(fl_rounds * (local_episodes + eval_episodes) * 6 * 1.5)
-    timeout_seconds = max(
-        6000, expected_duration
-    )  # At least 100 minutes, or calculated duration
-    print(
-        f"Timeout set to {timeout_seconds} seconds (~{timeout_seconds // 60} minutes) based on {fl_rounds} rounds"
-    )
-
     start_time = time.time()
     last_check_time = 0
-    line_count = 0
     metric_count = 0
+
+    # Calculate expected duration: rounds * (train + eval episodes) * ~5 sec per episode
+    # Add 50% buffer for safety
+    expected_duration = int(fl_rounds * (local_episodes + eval_episodes) * 5 * 1.5)
+    timeout = max(3600, expected_duration)  # At least 1 hour, or calculated duration
+    print(
+        f"Timeout set to {timeout} seconds (~{timeout // 60} minutes) based on {fl_rounds} rounds"
+    )
+
+    expected_metrics = (fl_rounds * 1 * 2) + (fl_rounds * 1)
     job_completed = False
 
-    # Training twins log TRAIN + EVAL. Eval twin logs only EVAL.
-    expected_metrics = (fl_rounds * num_workers * 2) + (fl_rounds * 1)
-
-    print(
-        f"Monitor started for {job_name}. Parsing atomic metrics... Expecting {expected_metrics} metrics."
-    )
     try:
         for line in process.stdout:
-            line_count += 1
-            if line_count % 100 == 0:
-                print(
-                    f"Processed {line_count} log lines, found {metric_count} metrics..."
-                )
-
-            # Check timeout
             elapsed = time.time() - start_time
-            if elapsed > timeout_seconds:
-                print(
-                    f"[WARNING] Timeout reached after {elapsed:.0f} seconds. Processed {line_count} lines, found {metric_count} metrics."
-                )
+            if elapsed > timeout:
+                print(f"[WARNING] Timeout reached after {elapsed:.0f} seconds")
                 break
 
-            # Atomic Match
             match = metric_pattern.search(line)
             if match:
-                twin_id = match.group(1)
-                rd = match.group(2)
-                mode = match.group(3)
-                reward = match.group(4)
-                loss = match.group(5)
-
-                # Normalize mode for CSV
+                twin_id, rd, mode, reward, loss = match.groups()
                 csv_mode = "EVAL" if "EVAL" in mode else "TRAIN"
                 if mode == "EVAL-ONLY-SKIP":
                     continue
@@ -246,12 +211,12 @@ spec:
                 metric_count += 1
                 if metric_count % 10 == 0 or metric_count <= 5:
                     print(
-                        f"[OK] Metric #{metric_count}: R={rd}, Twin={twin_id}, Mode={csv_mode}, Rew={reward}"
+                        f"[OK] Metric #{metric_count}: R={rd}, Twin={twin_id}, Mode={mode}, Rew={reward}"
                     )
                 with open(metrics.path, "a", newline="") as f:
                     csv.writer(f).writerow([rd, twin_id, csv_mode, reward, loss])
 
-            # Check if job is finished every 10 seconds
+            # Check if job finished every 10 seconds
             current_time = time.time()
             if current_time - last_check_time >= 10:
                 last_check_time = current_time
@@ -311,14 +276,9 @@ spec:
                         print(
                             f"Job marked Succeeded but pods still running: {pod_phases}. Continuing to stream..."
                         )
-
-    except Exception as e:
-        print(f"Error reading logs: {e}")
     finally:
         process.terminate()
-        print(
-            f"Log streaming finished. Total: {line_count} lines processed, {metric_count} metrics captured"
-        )
+        print(f"Log streaming finished. Total metrics captured: {metric_count}")
 
         if not job_completed:
             print(
@@ -331,40 +291,29 @@ spec:
                 f"[WARNING] Warning: Only captured {metric_count}/{expected_metrics} expected metrics"
             )
 
-    print("Training job finished monitoring.")
-
-
-# Load Config Defaults
-try:
-    with open("config/config.json", "r") as f:
-        config = json.load(f)
-except FileNotFoundError:
-    config = {"fl_rounds": 5, "num_workers": 3, "local_episodes": 5}
+    print("Training job finished.")
 
 
 @dsl.pipeline(
-    name="Federated Digital Twin Pipeline",
-    description="Orchestrates distributed training for robot fleet",
+    name="Single Twin Single Cluster Pipeline",
+    description="Runs single twin training in a single cluster",
 )
-def fed_twin_pipeline(
+def single_twin_single_cluster_pipeline(
     namespace: str = "kubeflow",
-    fl_rounds: int = config.get("fl_rounds", 5),
-    num_workers: int = config.get("num_workers", 3),
+    fl_rounds: int = config.get("fl_rounds", 10),
     local_episodes: int = config.get("local_episodes", 10),
     eval_episodes: int = config.get("eval_episodes", 20),
-    run_name: str = "fl_run_default",
+    run_name: str = "single_run_default",
     mlflow_run_id: str = "",
-    mlflow_exp_name: str = "Fed-Twin-FL",
+    mlflow_exp_name: str = "Single-Twin-Single-Cluster",
 ):
     import time
 
     job_id = str(int(time.time()))
 
-    # Single component that does everything
-    train_federated(
+    train_single_twin(
         namespace=namespace,
         fl_rounds=fl_rounds,
-        num_workers=num_workers,
         local_episodes=local_episodes,
         eval_episodes=eval_episodes,
         job_id=job_id,
@@ -376,5 +325,6 @@ def fed_twin_pipeline(
 
 if __name__ == "__main__":
     compiler.Compiler().compile(
-        fed_twin_pipeline, "pipeline_specs/fl_k8s_pipeline.yaml"
+        single_twin_single_cluster_pipeline,
+        "pipeline_specs/single_twin_single_cluster_pipeline.yaml",
     )

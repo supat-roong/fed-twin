@@ -76,31 +76,31 @@ for i in {1..60}; do
 done
 
 # Run Logic
-if [ "$PIPELINE_ARG" == "all_k8s" ]; then
-    echo "🔁 Running ALL K8s pipelines..."
+if [ "$PIPELINE_ARG" == "all_single_cluster" ]; then
+    echo "🔁 Running ALL Single Cluster pipelines..."
     # Ensure generated pipelines are ready and up-to-date with config
-    echo "⚠️ Generating/Updating fl_visual_k8s_pipeline.py..."
-    uv run python src/pipelines/generate_fl_visual_pipeline.py
+    echo "⚠️ Generating/Updating fed_twin_visual_single_cluster_pipeline.py..."
+    uv run python src/pipelines/generate_fed_twin_visual_pipeline.py
 
-    # Order: Single -> Single Visual -> FL -> FL Visual
-    for pt in "single_k8s" "single_visual_k8s" "fl_k8s" "fl_visual_k8s"; do
+    # Order: Single Twin -> Single Twin Visual -> Fed Twin -> Fed Twin Visual
+    for pt in "single_twin_single_cluster" "single_twin_visual_single_cluster" "fed_twin_single_cluster" "fed_twin_visual_single_cluster"; do
         run_pipeline "$pt"
     done
-elif [ "$PIPELINE_ARG" == "all_karmada" ]; then
-    echo "🔁 Running ALL Karmada pipelines..."
-    # Order: Single Karmada -> FL Karmada
-    for pt in "single_karmada" "fl_karmada"; do
+elif [ "$PIPELINE_ARG" == "all_multi_cluster" ]; then
+    echo "🔁 Running ALL Multi Cluster pipelines..."
+    # Order: Single Twin Multi Cluster -> Fed Twin Multi Cluster
+    for pt in "single_twin_multi_cluster" "fed_twin_multi_cluster"; do
         run_pipeline "$pt"
     done
 elif [ "$PIPELINE_ARG" == "all" ]; then
-    echo "❌ 'all' mode is no longer supported because K8s and Karmada pipelines require different environments."
-    echo "👉 Please use 'all-k8s' or 'all-karmada' instead."
+    echo "❌ 'all' mode is no longer supported because single_cluster and multi_cluster pipelines require different environments."
+    echo "👉 Please use 'all_single_cluster' or 'all_multi_cluster' instead."
     exit 1
 else
     # Auto-generate if visual
-    if [ "$PIPELINE_ARG" == "fl_visual_k8s" ]; then
-        echo "⚠️ Generating/Updating fl_visual_k8s_pipeline.py..."
-        uv run python src/pipelines/generate_fl_visual_pipeline.py
+    if [ "$PIPELINE_ARG" == "fed_twin_visual_single_cluster" ]; then
+        echo "⚠️ Generating/Updating fed_twin_visual_single_cluster_pipeline.py..."
+        uv run python src/pipelines/generate_fed_twin_visual_pipeline.py
     fi
 
     run_pipeline "$PIPELINE_ARG"
@@ -112,18 +112,18 @@ uv run python src/analysis/compare_results.py || echo "⚠️ Could not generate
 uv run python src/analysis/worker_diversity.py || echo "⚠️ Could not generate worker diversity plot"
 
 # Generate generalization gap analysis for both pipeline types
-if [[ "$PIPELINE_ARG" == *"single"* ]] || [ "$PIPELINE_ARG" == "all_k8s" ] || [ "$PIPELINE_ARG" == "all_karmada" ]; then
-    if [[ "$PIPELINE_ARG" == *"karmada"* ]] || [ "$PIPELINE_ARG" == "all_karmada" ]; then
-        uv run python src/analysis/generalization_gap.py single_karmada || echo "⚠️ Could not generate single_karmada generalization gap"
+if [[ "$PIPELINE_ARG" == *"single_twin"* ]] || [ "$PIPELINE_ARG" == "all_single_cluster" ] || [ "$PIPELINE_ARG" == "all_multi_cluster" ]; then
+    if [[ "$PIPELINE_ARG" == *"multi_cluster"* ]] || [ "$PIPELINE_ARG" == "all_multi_cluster" ]; then
+        uv run python src/analysis/generalization_gap.py single_twin_multi_cluster || echo "⚠️ Could not generate single_twin_multi_cluster generalization gap"
     else
-        uv run python src/analysis/generalization_gap.py single_k8s || echo "⚠️ Could not generate single_k8s generalization gap"
+        uv run python src/analysis/generalization_gap.py single_twin_single_cluster || echo "⚠️ Could not generate single_twin_single_cluster generalization gap"
     fi
 fi
-if [[ "$PIPELINE_ARG" == *"fl"* ]] || [ "$PIPELINE_ARG" == "all_k8s" ] || [ "$PIPELINE_ARG" == "all_karmada" ]; then
-    if [[ "$PIPELINE_ARG" == *"karmada"* ]] || [ "$PIPELINE_ARG" == "all_karmada" ]; then
-        uv run python src/analysis/generalization_gap.py fl_karmada || echo "⚠️ Could not generate fl_karmada generalization gap"
+if [[ "$PIPELINE_ARG" == *"fed_twin"* ]] || [ "$PIPELINE_ARG" == "all_single_cluster" ] || [ "$PIPELINE_ARG" == "all_multi_cluster" ]; then
+    if [[ "$PIPELINE_ARG" == *"multi_cluster"* ]] || [ "$PIPELINE_ARG" == "all_multi_cluster" ]; then
+        uv run python src/analysis/generalization_gap.py fed_twin_multi_cluster || echo "⚠️ Could not generate fed_twin_multi_cluster generalization gap"
     else
-        uv run python src/analysis/generalization_gap.py fl_k8s || echo "⚠️ Could not generate FL k8s generalization gap"
+        uv run python src/analysis/generalization_gap.py fed_twin_single_cluster || echo "⚠️ Could not generate fed_twin_single_cluster generalization gap"
     fi
 fi
 

@@ -11,7 +11,7 @@ import fetch_results
 @patch("boto3.resource")
 @patch("os.path.exists")
 @patch("os.remove")
-@patch("sys.argv", ["fetch_results.py", "fl"])
+@patch("sys.argv", ["fetch_results.py", "fed_twin_single_cluster"])
 def test_fetch_results_success(mock_remove, mock_exists, mock_boto3):
     # Setup mocks
     mock_exists.return_value = True
@@ -55,7 +55,7 @@ def test_fetch_results_no_args():
 
 
 @patch("os.path.exists", return_value=False)
-@patch("sys.argv", ["fetch_results.py", "fl"])
+@patch("sys.argv", ["fetch_results.py", "fed_twin_single_cluster"])
 def test_fetch_results_no_last_run(mock_exists):
     fetch_results.fetch_results()
 
@@ -63,7 +63,7 @@ def test_fetch_results_no_last_run(mock_exists):
 @patch("boto3.resource")
 @patch("os.path.exists", return_value=True)
 @patch("os.remove")
-@patch("sys.argv", ["fetch_results.py", "fl"])
+@patch("sys.argv", ["fetch_results.py", "fed_twin_single_cluster"])
 @patch("builtins.open", new_callable=mock_open, read_data="run-missing\n")
 def test_fetch_results_no_artifacts_found(
     mock_file, mock_remove, mock_exists, mock_boto3
@@ -79,7 +79,7 @@ def test_fetch_results_no_artifacts_found(
 @patch("boto3.resource")
 @patch("os.path.exists", return_value=True)
 @patch("os.remove")
-@patch("sys.argv", ["fetch_results.py", "fl"])
+@patch("sys.argv", ["fetch_results.py", "fed_twin_single_cluster"])
 def test_fetch_results_other_csv(mock_remove, mock_exists, mock_boto3):
     mock_s3 = mock_boto3.return_value
     mock_bucket = mock_s3.Bucket.return_value

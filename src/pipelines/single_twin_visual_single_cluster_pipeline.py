@@ -145,16 +145,16 @@ def train_step(
 
 
 @dsl.pipeline(
-    name="Single Visual Pipeline",
-    description="Visual DAG representation of single twin training rounds reusing core logic",
+    name="Single Twin Visual Single Cluster Pipeline",
+    description="Visual DAG representation of single twin training rounds in a single cluster",
 )
-def single_twin_visual_pipeline(
+def single_twin_visual_single_cluster_pipeline(
     fl_rounds: int = config.get("fl_rounds", 10),
     local_episodes: int = config.get("local_episodes", 10),
     eval_episodes: int = config.get("eval_episodes", 20),
     run_name: str = "single_visual_run_default",
     mlflow_run_id: str = "",
-    mlflow_exp_name: str = "Fed-Twin-Single-Visual",
+    mlflow_exp_name: str = "Single-Twin-Visual-Single-Cluster",
 ):
     init_task = initialize_model_visual(
         run_name=run_name, mlflow_run_id=mlflow_run_id, mlflow_exp_name=mlflow_exp_name
@@ -203,5 +203,6 @@ def single_twin_visual_pipeline(
 
 if __name__ == "__main__":
     compiler.Compiler().compile(
-        single_twin_visual_pipeline, "pipeline_specs/single_visual_k8s_pipeline.yaml"
+        single_twin_visual_single_cluster_pipeline,
+        "pipeline_specs/single_twin_visual_single_cluster_pipeline.yaml",
     )

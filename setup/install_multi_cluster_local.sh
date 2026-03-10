@@ -4,8 +4,8 @@
 
 set -euo pipefail
 
-HOST_CLUSTER="fed-twin-host"
-MEMBER_PREFIX="fed-twin-member"
+HOST_CLUSTER="multi-cluster-host"
+MEMBER_PREFIX="multi-cluster-member"
 IMAGE_NAME="fed-twin-app:v1"
 
 echo "=================================================="
