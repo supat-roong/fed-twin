@@ -138,9 +138,9 @@ join_and_patch() {
     
     if [ -n "$secret_name" ]; then
         # Use python to safely update the server URL in the base64 encoded secret data
-        kubectl --kubeconfig="$KARMADA_API_CONFIG" get secret "$secret_name" -n "$secret_ns" -o jsonpath='{.data.kubeconfig}' | base64 -d > /tmp/temp_kubeconfig
+        kubectl --kubeconfig="$KARMADA_API_CONFIG" get secret "$secret_name" -n "$secret_ns" -o jsonpath='{.data.kubeconfig}' | python3 -c "import sys, base64; sys.stdout.buffer.write(base64.b64decode(sys.stdin.read()))" > /tmp/temp_kubeconfig
         python3 -c "import sys; c=open('/tmp/temp_kubeconfig').read(); open('/tmp/temp_kubeconfig','w').write(c.replace('127.0.0.1', '$ip').replace('localhost', '$ip'))"
-        local new_kubeconfig=$(base64 -i /tmp/temp_kubeconfig 2>/dev/null || base64 /tmp/temp_kubeconfig)
+        local new_kubeconfig=$(python3 -c "import sys, base64; print(base64.b64encode(open('/tmp/temp_kubeconfig', 'rb').read()).decode('utf-8'))")
         kubectl --kubeconfig="$KARMADA_API_CONFIG" patch secret "$secret_name" -n "$secret_ns" -p "{\"data\":{\"kubeconfig\":\"$new_kubeconfig\"}}" || true
     fi
 }
