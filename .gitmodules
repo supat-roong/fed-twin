@@ -1,0 +1,3 @@
+[submodule "vendor/fed-infra"]
+	path = vendor/fed-infra
+	url = https://github.com/supat-roong/fed-infra.git

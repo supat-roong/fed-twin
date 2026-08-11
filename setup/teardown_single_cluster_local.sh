@@ -1,10 +1,6 @@
 #!/usr/bin/env bash
-# teardown_k8s_local.sh — Destroys the Federated Digital Twin local kind cluster
-
+# teardown_single_cluster_local.sh — destroy the local cluster via vendor/fed-infra.
 set -euo pipefail
 
-CLUSTER_NAME="single-cluster"
-
-echo "🗑️ Destroying kind cluster '$CLUSTER_NAME'..."
-kind delete cluster --name "$CLUSTER_NAME"
-echo "✅ Teardown complete."
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+"${ROOT_DIR}/vendor/fed-infra/bin/fed-infra-down" --env "${ROOT_DIR}/infra.env"
