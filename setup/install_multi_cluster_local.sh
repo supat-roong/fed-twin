@@ -8,6 +8,24 @@ HOST_CLUSTER="multi-cluster-host"
 MEMBER_PREFIX="multi-cluster-member"
 IMAGE_NAME="fed-twin-app:v1"
 
+# MLflow now builds/deploys via vendor/fed-infra instead of the deleted
+# docker/Dockerfile.mlflow + k8s/mlflow-server.yaml (removed when the
+# single-cluster path converted to the library). This keeps the
+# multi-cluster path working with the same image and manifest the
+# single-cluster path uses, without otherwise restructuring this script.
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+FED_INFRA_ROOT="${ROOT_DIR}/vendor/fed-infra"
+export FED_INFRA_ROOT
+# shellcheck source=/dev/null
+. "${FED_INFRA_ROOT}/lib/common.sh"
+# shellcheck source=/dev/null
+. "${FED_INFRA_ROOT}/lib/config.sh"
+# shellcheck source=/dev/null
+. "${FED_INFRA_ROOT}/lib/render.sh"
+# shellcheck source=/dev/null
+. "${FED_INFRA_ROOT}/lib/mlflow.sh"
+fed_config_load "${ROOT_DIR}/infra.env"
+
 echo "=================================================="
 echo "  Federated Digital Twin Karmada Local Setup"
 echo "=================================================="
@@ -157,11 +175,11 @@ done
 # 6. Build & Load Image to All Clusters (Host + Members)
 echo "🐳 Building Docker Images..."
 docker build -t "$IMAGE_NAME" -f docker/Dockerfile.app .
-docker build -t local-mlflow-boto3:v2.12.2 -f docker/Dockerfile.mlflow .
+fed_mlflow_build_image "$FED_MLFLOW_IMAGE" "$FED_MLFLOW_VERSION"
 
 echo "🚚 Loading Image into Host Cluster..."
 kind load docker-image "$IMAGE_NAME" --name "$HOST_CLUSTER"
-kind load docker-image local-mlflow-boto3:v2.12.2 --name "$HOST_CLUSTER"
+kind load docker-image "$FED_MLFLOW_IMAGE" --name "$HOST_CLUSTER"
 
 for i in $(seq 1 $NUM_MEMBER_CLUSTERS); do
     MEMBER_NAME="${MEMBER_PREFIX}${i}"
@@ -214,7 +232,7 @@ kubectl patch deployment minio -n kubeflow --type=json -p='[{"op": "replace", "p
 kubectl patch deployment workflow-controller -n kubeflow --type=json -p='[{"op": "replace", "path": "/spec/template/spec/containers/0/args/3", "value": "quay.io/argoproj/argoexec:v3.4.17"}]' || true
 
 # MLflow
-kubectl apply -f k8s/mlflow-server.yaml
+fed_mlflow_install
 kubectl run minio-setup-mlflow --image=minio/mc:latest --namespace=kubeflow --restart=Never \
   --command -- sh -c "mc alias set minio http://minio-service.kubeflow.svc.cluster.local:9000 minio minio123 && mc mb minio/mlflow-artifacts --ignore-existing" 2>/dev/null || true
 kubectl wait --for=condition=completed pod/minio-setup-mlflow -n kubeflow --timeout=60s 2>/dev/null || true
