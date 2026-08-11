@@ -217,7 +217,15 @@ Both MLflow and Kubeflow Pipelines (KFP) provide specialized UIs for monitoring.
 - **Tools**: `kubectl`, `python 3.10+`, and `uv`.
 
 ### 2. Local Setup
-You can setup the local development clusters and deploy the infrastructure using `make`:
+This project consumes the `fed-infra` bootstrap library as a git submodule
+under `vendor/fed-infra`. Initialize it before running setup (needed on a
+first checkout, and again after any pull that bumps the pinned commit):
+
+```bash
+git submodule update --init --recursive
+```
+
+Then setup and deploy the local development clusters using `make`:
 
 ```bash
 # Setup Single-Cluster development environment
