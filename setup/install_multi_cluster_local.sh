@@ -49,23 +49,6 @@ echo "Exposing KFP MinIO..."
 fed_expose_nodeport minio-service kubeflow \
   "[{\"name\":\"api\",\"port\":9000,\"targetPort\":9000,\"nodePort\":${FED_NODEPORT_MINIO_API}},{\"name\":\"console\",\"port\":9001,\"targetPort\":9001,\"nodePort\":${FED_NODEPORT_MINIO_CONSOLE}}]"
 
-# Bump inotify limits on every node: fed-infra's kind cluster lifecycle
-# (vendor/fed-infra/lib/kind.sh) doesn't do this for any profile, and with
-# host + FED_MEMBER_COUNT member control planes running on one machine it's
-# easy to exhaust inotify watchers once pipeline runs start piling up pods
-# across all of them. Best-effort and generic (not fed-twin-specific) -- a
-# promotion candidate for fed-infra's kind lifecycle, see
-# docs/task-6-report.md.
-echo "Raising inotify limits on cluster nodes..."
-docker exec "${FED_CLUSTER_NAME}-control-plane" \
-  sysctl -w fs.inotify.max_user_instances=512 fs.inotify.max_user_watches=524288 || true
-i=1
-while [ "$i" -le "${FED_MEMBER_COUNT}" ]; do
-  docker exec "${FED_MEMBER_PREFIX}${i}-control-plane" \
-    sysctl -w fs.inotify.max_user_instances=512 fs.inotify.max_user_watches=524288 || true
-  i=$((i + 1))
-done
-
 # ---- Karmada Dashboard ----
 # Not a fed-infra component: it's genuinely optional tooling on top of the
 # karmada component, not part of the consumer-agnostic bootstrap contract,
