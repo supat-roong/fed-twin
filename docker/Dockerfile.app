@@ -14,7 +14,15 @@ RUN curl -LO "https://dl.k8s.io/release/v1.28.0/bin/linux/$(dpkg --print-archite
     chmod +x kubectl && \
     mv kubectl /usr/local/bin/
 
-RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu && \
+# --extra-index-url, not --index-url: the latter *replaces* PyPI, so anything
+# pip needs that the PyTorch index does not serve becomes unresolvable. That
+# started failing the build with "No matching distribution found for
+# flit_core<4,>=3.11" -- a build dependency pulled in during resolution, which
+# lives on PyPI and not on download.pytorch.org. With --extra-index-url the
+# CPU wheel index is consulted in addition to PyPI rather than instead of it,
+# which keeps the original intent (CPU-only torch, no CUDA payload) while
+# leaving ordinary build dependencies resolvable.
+RUN pip install --no-cache-dir torch --extra-index-url https://download.pytorch.org/whl/cpu && \
     pip install --no-cache-dir flwr gymnasium numpy kfp==2.15.2 mlflow-skinny boto3
 
 COPY src/core/engine.py ./
