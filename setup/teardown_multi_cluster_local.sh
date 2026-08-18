@@ -1,22 +1,7 @@
 #!/usr/bin/env bash
-# teardown_karmada_local.sh — Destroys the Federated Digital Twin Karmada local kind clusters
-
+# teardown_multi_cluster_local.sh — destroy the host + Karmada member
+# clusters via vendor/fed-infra. Mirrors teardown_single_cluster_local.sh.
 set -euo pipefail
 
-# Make sure environment has standard paths
-source ~/.zshrc 2>/dev/null || true
-export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
-
-HOST_CLUSTER="multi-cluster-host"
-MEMBER_PREFIX="multi-cluster-member"
-
-echo "🗑️ Destroying Host cluster '$HOST_CLUSTER'..."
-kind delete cluster --name "$HOST_CLUSTER" || true
-
-# We don't know exactly how many members exist, so we delete all that match the prefix
-for member in $(kind get clusters 2>/dev/null | grep "^$MEMBER_PREFIX" || true); do
-    echo "🗑️ Destroying Member cluster '$member'..."
-    kind delete cluster --name "$member"
-done
-
-echo "✅ Teardown complete."
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+"${ROOT_DIR}/vendor/fed-infra/bin/fed-infra-down" --env "${ROOT_DIR}/infra.env.multi"
