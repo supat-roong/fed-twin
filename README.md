@@ -122,8 +122,9 @@ This project supports two primary deployment topologies to accurately simulate d
 ### 2. Multi-Cluster (Multi-Cluster Federation)
 *   **What it is:** True distributed federation using [Karmada](https://karmada.io/) to manage multiple distinct Kubernetes clusters. The aggregator runs on a "Host" cluster, while digital twin workers are scheduled across geographically simulated "Member" clusters.
 *   **Real Use Case:** Mimics real-world production FL where digital twins are geographically dispersed across different regions or edge locations, each with their own isolated local Kubernetes cluster (e.g., connected autonomous vehicles computing locally in different geographic zones, or separate smart factories across the globe). It forces the system to handle cross-cluster networking, latency resilience, and robust multi-cluster scheduling.
-*   **Setup Command:** `make multi-cluster-setup`
+*   **Setup Command:** `make multi-cluster-setup` — bootstraps the host + member clusters via `vendor/fed-infra` using the `infra.env.multi` contract (mirrors `infra.env`; see the header comment in that file for the deltas). Installs `karmadactl` automatically if it isn't already on `PATH`.
 *   **Run Command:** `./run_pipeline.sh all_multi_cluster`
+*   **Karmada Dashboard:** deployed automatically at setup, with a 24h admin token printed at the end. Reach it with `kubectl port-forward -n karmada-system svc/karmada-dashboard 32000:80`, then browse to `http://localhost:32000`.
 
 ---
 
@@ -214,7 +215,7 @@ Both MLflow and Kubeflow Pipelines (KFP) provide specialized UIs for monitoring.
 ### 1. Prerequisites
 - **Kubernetes Cluster**: A local cluster like [Kind](https://kind.sigs.k8s.io/) or [Minikube](https://minikube.sigs.k8s.io/).
 - **Container Runtime**: Docker Desktop, Colima, or Podman.
-- **Tools**: `kubectl`, `python 3.10+`, and `uv`.
+- **Tools**: `kubectl`, `python 3.10+`, and `uv`. Multi-cluster mode additionally needs `karmadactl`, `python3`, and `git`; `install_multi_cluster_local.sh` installs `karmadactl` for you if it's missing.
 
 ### 2. Local Setup
 This project consumes the `fed-infra` bootstrap library as a git submodule
@@ -224,6 +225,11 @@ first checkout, and again after any pull that bumps the pinned commit):
 ```bash
 git submodule update --init --recursive
 ```
+
+Both modes are configured entirely through a consumer contract file at the
+repo root — `infra.env` for single-cluster, `infra.env.multi` for
+multi-cluster — read by `vendor/fed-infra/bin/fed-infra-up`/`fed-infra-down`.
+See `vendor/fed-infra/README.md` for the full variable reference.
 
 Then setup and deploy the local development clusters using `make`:
 
