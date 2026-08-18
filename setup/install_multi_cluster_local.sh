@@ -28,9 +28,16 @@ docker build -t fed-twin-app:v1 -f "${ROOT_DIR}/docker/Dockerfile.app" "${ROOT_D
 # fed-twin-specific -- a promotion candidate for fed-infra itself (see
 # docs/task-6-report.md).
 if ! command -v karmadactl >/dev/null 2>&1; then
-  echo "Installing karmadactl..."
+  # Pinned to FED_KARMADA_VERSION rather than installing "latest":
+  # fed-infra's fed_karmada_init hard-fails when karmadactl's version differs
+  # from FED_KARMADA_VERSION, so an unpinned install would succeed here and
+  # then abort the bootstrap moments later with a version-mismatch error --
+  # on a fresh machine, the most confusing possible time for it. install-cli.sh
+  # wants the version without the leading "v" (it prepends one itself).
+  echo "Installing karmadactl ${FED_KARMADA_VERSION}..."
   curl -s --proto '=https' --tlsv1.2 -sSf \
-    https://raw.githubusercontent.com/karmada-io/karmada/master/hack/install-cli.sh | bash
+    https://raw.githubusercontent.com/karmada-io/karmada/master/hack/install-cli.sh \
+    | INSTALL_CLI_VERSION="${FED_KARMADA_VERSION#v}" bash
 fi
 
 "${ROOT_DIR}/vendor/fed-infra/bin/fed-infra-up" --env "${ROOT_DIR}/infra.env.multi"
