@@ -124,7 +124,7 @@ This project supports two primary deployment topologies to accurately simulate d
 *   **Real Use Case:** Mimics real-world production FL where digital twins are geographically dispersed across different regions or edge locations, each with their own isolated local Kubernetes cluster (e.g., connected autonomous vehicles computing locally in different geographic zones, or separate smart factories across the globe). It forces the system to handle cross-cluster networking, latency resilience, and robust multi-cluster scheduling.
 *   **Setup Command:** `make multi-cluster-setup` — bootstraps the host + member clusters via `vendor/fed-infra` using the `infra.env.multi` contract (mirrors `infra.env`; see the header comment in that file for the deltas). Installs `karmadactl` automatically if it isn't already on `PATH`.
 *   **Run Command:** `./run_pipeline.sh all_multi_cluster`
-*   **Karmada Dashboard:** deployed automatically at setup, with a 24h admin token printed at the end. Reach it with `kubectl port-forward -n karmada-system svc/karmada-dashboard 32000:80`, then browse to `http://localhost:32000`.
+*   **Karmada Dashboard:** deployed automatically at setup as `vendor/fed-infra`'s `karmada-dashboard` component, with a 24h admin token printed at the end. It's exposed directly on the host — just browse to `http://localhost:32000`, no port-forward needed.
 
 ---
 
