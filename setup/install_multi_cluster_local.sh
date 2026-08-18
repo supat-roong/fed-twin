@@ -14,6 +14,8 @@ export FED_INFRA_ROOT
 . "${FED_INFRA_ROOT}/lib/config.sh"
 # shellcheck source=/dev/null
 . "${FED_INFRA_ROOT}/lib/nodeport.sh"
+# shellcheck source=/dev/null
+. "${FED_INFRA_ROOT}/lib/dashboard.sh"
 fed_config_load "${ROOT_DIR}/infra.env.multi"
 
 echo "Syncing uv environment..."
@@ -57,73 +59,24 @@ fed_expose_nodeport minio-service kubeflow \
   "[{\"name\":\"api\",\"port\":9000,\"targetPort\":9000,\"nodePort\":${FED_NODEPORT_MINIO_API}},{\"name\":\"console\",\"port\":9001,\"targetPort\":9001,\"nodePort\":${FED_NODEPORT_MINIO_CONSOLE}}]"
 
 # ---- Karmada Dashboard ----
-# Not a fed-infra component: it's genuinely optional tooling on top of the
-# karmada component, not part of the consumer-agnostic bootstrap contract,
-# so it stays here rather than being promoted into vendor/fed-infra (see
-# docs/task-6-report.md).
-echo "=================================================="
-echo "  Deploying Karmada Dashboard"
-echo "=================================================="
-kubectl config use-context "kind-${FED_CLUSTER_NAME}"
-
-echo "Applying Karmada Dashboard manifests..."
-kubectl apply -f https://raw.githubusercontent.com/karmada-io/dashboard/main/deploy/karmada-dashboard.yaml
-
-echo "Deploying Secret for Karmada API configuration..."
-kubectl create secret generic karmada-kubeconfig \
-  --from-file=karmada-kubeconfig="${FED_KARMADA_CONFIG}" -n karmada-system \
-  --dry-run=client -o yaml | kubectl apply -f -
-kubectl create secret generic karmada-kubeconfig-kf \
-  --from-file=karmada-kubeconfig="${FED_KARMADA_CONFIG}" -n kubeflow \
-  --dry-run=client -o yaml | kubectl apply -f -
-
-echo "Exposing Karmada Dashboard via NodePort 32000..."
-cat <<EOF | kubectl apply -f -
-apiVersion: v1
-kind: Service
-metadata:
-  labels:
-    app: frontend
-  name: karmada-dashboard
-  namespace: karmada-system
-spec:
-  ports:
-  - name: http
-    nodePort: 32000
-    port: 80
-    protocol: TCP
-    targetPort: 80
-  selector:
-    app: frontend
-  type: NodePort
-EOF
-
-echo "Waiting for Karmada Dashboard..."
-kubectl rollout status deployment/karmada-dashboard -n karmada-system --timeout=5m || true
-
-# ---- Karmada Dashboard access token ----
+# Promoted into vendor/fed-infra as the `karmada-dashboard` component (see
+# docs/task-6-report.md for the history): fed-infra-up above already installed
+# it, wired its Karmada-apiserver kubeconfig Secret into both karmada-system
+# and kubeflow, and exposed it as a NodePort mapped out to this host at
+# FED_HOSTPORT_KARMADA_DASHBOARD -- no port-forward needed anymore.
+#
+# fed_dashboard_token deliberately prints the token to stdout only (never
+# through fed_log), so it cannot leak into a redirected log file -- which
+# also means fed-infra-up itself never surfaces it. That token is the only
+# way to log in, so this script must mint and print it explicitly, the same
+# as the inlined block this replaces did.
 echo "=================================================="
 echo "  Generating Karmada Dashboard Access Token"
 echo "=================================================="
-kubectl --kubeconfig="${FED_KARMADA_CONFIG}" create serviceaccount karmada-admin-sa \
-  -n karmada-system --dry-run=client -o yaml \
-  | kubectl --kubeconfig="${FED_KARMADA_CONFIG}" apply -f -
-kubectl --kubeconfig="${FED_KARMADA_CONFIG}" create clusterrolebinding karmada-admin-sa-binding \
-  --clusterrole=cluster-admin --serviceaccount=karmada-system:karmada-admin-sa \
-  --dry-run=client -o yaml | kubectl --kubeconfig="${FED_KARMADA_CONFIG}" apply -f -
-
-DASHBOARD_TOKEN=$(kubectl --kubeconfig="${FED_KARMADA_CONFIG}" create token karmada-admin-sa \
-  -n karmada-system --duration=24h)
+DASHBOARD_TOKEN=$(KUBECONFIG="${FED_KARMADA_CONFIG}" fed_dashboard_token karmada-system karmada-admin-sa)
 echo "Dashboard Access Token (expires in 24h):"
 echo "--------------------------------------------------"
 echo "$DASHBOARD_TOKEN"
 echo "--------------------------------------------------"
 
-# NOTE: the multi-host kind cluster fed-infra creates (vendor/fed-infra/kind/
-# multi-host.yaml.tpl) does not map hostPort 32000 (dashboard) or 32443 (the
-# Karmada apiserver's own NodePort) out to this machine, unlike the old
-# hand-rolled setup/kind-multi-cluster-host.yaml it replaces. See
-# docs/task-6-report.md for why this is a fed-infra gap, not something fixed
-# here. Until it's addressed, reach the dashboard with:
-#   kubectl port-forward -n karmada-system svc/karmada-dashboard 32000:80
-echo "Setup complete. Dashboard: use 'kubectl port-forward -n karmada-system svc/karmada-dashboard 32000:80', then http://localhost:32000"
+echo "Setup complete. Karmada Dashboard: http://localhost:${FED_HOSTPORT_KARMADA_DASHBOARD}"
