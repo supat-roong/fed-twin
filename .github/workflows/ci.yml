@@ -1,38 +1,60 @@
 name: CI
 
 on:
-  push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
+  push: { branches: [main] }
+  pull_request: { branches: [main] }
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
 
 jobs:
-  lint:
+  ci:
+    name: Lint and test
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-    - uses: actions/checkout@v4
-    - name: Install uv
-      uses: astral-sh/setup-uv@v5
-    - name: Run linter (Ruff)
-      run: uvx ruff check .
-    - name: Check formatting (Ruff)
-      run: uvx ruff format --check .
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+      - run: uv python install 3.10
+      - run: uv sync
+      - name: Lint and test
+        env:
+          OMP_NUM_THREADS: "1"
+        run: make ci
 
-  test:
+  contracts:
+    name: Contract dry-runs
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-    - uses: actions/checkout@v4
-    - name: Install uv
-      uses: astral-sh/setup-uv@v5
-      with:
-        enable-cache: true
-        cache-dependency-glob: "uv.lock"
-    - name: Set up Python
-      run: uv python install 3.10
-    - name: Install dependencies
-      run: uv sync
-    - name: Run tests (Pytest) with coverage
-      timeout-minutes: 5
-      run: |
-        export OMP_NUM_THREADS=1
-        PYTHONPATH=src uv run pytest -n auto --cov=src --cov-report=term-missing tests/
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Install envsubst
+        run: sudo apt-get update && sudo apt-get install -y gettext-base
+      - run: make contracts
+
+  images:
+    name: Build image
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker/Dockerfile.app
+          push: false
+          tags: fed-twin-app:test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
