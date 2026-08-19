@@ -1,10 +1,11 @@
 import os
+
 import flwr as fl
-from engine import PolicyNet, DigitalTwinEnv, get_parameters, set_parameters
-from tracking import setup_mlflow, log_metrics
+import numpy as np
 import torch
 import torch.optim as optim
-import numpy as np
+from engine import DigitalTwinEnv, PolicyNet, get_parameters, set_parameters
+from tracking import log_metrics, setup_mlflow
 
 TWIN_ID = os.getenv("TWIN_ID", "robot-01")
 SERVER_ADDR = os.getenv("SERVER_ADDR", "fl-server:8080")

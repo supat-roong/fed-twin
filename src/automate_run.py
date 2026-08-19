@@ -1,8 +1,9 @@
-import mlflow
-import kfp
-import time
 import os
 import sys
+import time
+
+import kfp
+import mlflow
 
 CLIENT_HOST = "http://localhost:8080"
 
@@ -48,7 +49,10 @@ def run_experiment():
 
     if pipeline_type not in pipeline_map:
         print(
-            f"Unknown pipeline type: {pipeline_type}. Choose 'fed_twin_single_cluster', 'single_twin_single_cluster', 'single_twin_visual_single_cluster', 'fed_twin_visual_single_cluster', 'fed_twin_multi_cluster', or 'single_twin_multi_cluster'."
+            f"Unknown pipeline type: {pipeline_type}. Choose 'fed_twin_single_cluster', "
+            "'single_twin_single_cluster', 'single_twin_visual_single_cluster', "
+            "'fed_twin_visual_single_cluster', 'fed_twin_multi_cluster', "
+            "or 'single_twin_multi_cluster'."
         )
         sys.exit(1)
 
@@ -116,7 +120,6 @@ def run_experiment():
         try:
             with open(
                 os.path.join(os.path.dirname(__file__), "..", "config", "config.json"),
-                "r",
             ) as f:
                 _cfg = json.load(f)
         except Exception:
@@ -211,8 +214,8 @@ def run_experiment():
 
         if pipeline_type in ["fed_twin_multi_cluster", "single_twin_multi_cluster"]:
             # Create Kubernetes secret directly to bypass KFP parameter limitations
-            import tempfile
             import subprocess as _sp
+            import tempfile
 
             secret_name = f"karmconfigs-{mlflow_run_id}"
 
@@ -257,7 +260,7 @@ def run_experiment():
 
         expected_params = set()
         try:
-            with open(cfg["yaml"], "r") as f:
+            with open(cfg["yaml"]) as f:
                 yaml_content = yaml.safe_load(f)
                 input_defs = (
                     yaml_content.get("root", {})

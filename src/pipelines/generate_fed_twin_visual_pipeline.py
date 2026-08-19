@@ -4,7 +4,7 @@ import json
 def generate_pipeline_code():
     # Load config
     try:
-        with open("config/config.json", "r") as f:
+        with open("config/config.json") as f:
             config = json.load(f)
     except FileNotFoundError:
         config = {"fl_rounds": 3, "num_workers": 3, "local_episodes": 5}
@@ -150,7 +150,9 @@ def eval_twin(
     params = get_parameters(model)
     
     print(f"[{{twin_id}}] running global evaluation.")
-    loss_neg, num_samples, results = client.evaluate(params, {{"server_round": round_num, "local_episodes": local_episodes}})
+    loss_neg, num_samples, results = client.evaluate(
+        params, {{"server_round": round_num, "local_episodes": local_episodes}}
+    )
     eval_reward = results["reward"]
     
     # Pass through model state (identity)

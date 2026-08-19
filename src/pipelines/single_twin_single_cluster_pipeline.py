@@ -1,11 +1,11 @@
-from kfp import dsl
-from kfp import compiler
-from kfp.dsl import Output, Artifact
 import json
+
+from kfp import compiler, dsl
+from kfp.dsl import Artifact, Output
 
 # Reuse config if available, or defaults
 try:
-    with open("config/config.json", "r") as f:
+    with open("config/config.json") as f:
         config = json.load(f)
 except FileNotFoundError:
     config = {"fl_rounds": 10, "num_workers": 1, "local_episodes": 10}
@@ -27,12 +27,13 @@ def train_single_twin(
     mlflow_exp_name: str,
     metrics: Output[Artifact],
 ):
-    import os
-    import subprocess
-    import requests
-    import time
-    import re
     import csv
+    import os
+    import re
+    import subprocess
+    import time
+
+    import requests
     from jinja2 import Template
 
     kubectl_path = "/tmp/kubectl"
@@ -262,7 +263,8 @@ spec:
 
                     if all_terminal and metric_count >= expected_metrics:
                         print(
-                            f"[SUCCESS] Job completed successfully and expected metrics ({metric_count}/{expected_metrics}) captured."
+                            f"[SUCCESS] Job completed successfully and expected metrics "
+                            f"({metric_count}/{expected_metrics}) captured."
                         )
                         job_completed = True
                         # Extended grace period to ensure all logs are flushed

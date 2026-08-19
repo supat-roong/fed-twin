@@ -1,7 +1,7 @@
 import gymnasium as gym
+import numpy as np
 import torch
 import torch.nn as nn
-import numpy as np
 
 
 # --- Digital Twin Simulation Engine ---
@@ -97,7 +97,7 @@ class DigitalTwinEnv:
 # --- Policy Network ---
 class PolicyNet(nn.Module):
     def __init__(self, state_dim=4, action_dim=2):
-        super(PolicyNet, self).__init__()
+        super().__init__()
         self.fc = nn.Sequential(
             nn.Linear(state_dim, 32),
             nn.ReLU(),

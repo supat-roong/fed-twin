@@ -1,7 +1,8 @@
-import pandas as pd
-import matplotlib.pyplot as plt
-import os
 import glob
+import os
+
+import matplotlib.pyplot as plt
+import pandas as pd
 
 
 def get_latest_metrics(pipeline_type):

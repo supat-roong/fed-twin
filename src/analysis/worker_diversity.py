@@ -1,8 +1,9 @@
-import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns
 import glob
 import os
+
+import matplotlib.pyplot as plt
+import pandas as pd
+import seaborn as sns
 
 
 def get_latest_metrics(pipeline_type):

@@ -1,7 +1,8 @@
-import numpy as np
-import sys
 import os
+import sys
 from unittest.mock import patch
+
+import numpy as np
 
 # Add src and src/core to Python path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../src")))
@@ -9,8 +10,8 @@ sys.path.insert(
     0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../src/core"))
 )
 
+from core.client import TwinClient, compute_returns
 from core.engine import PolicyNet
-from core.client import compute_returns, TwinClient
 
 
 def test_compute_returns():

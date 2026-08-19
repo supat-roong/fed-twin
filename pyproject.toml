@@ -34,3 +34,21 @@ dev = [
     "pytest-xdist>=3.5.0",
     "ruff>=0.15.5",
 ]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.ruff.lint]
+# Matches active-fed's selection, which was verified to produce identical
+# results under ruff 0.15.4 and 0.16.3 -- an explicit select is what stops a
+# ruff upgrade from turning CI red with no code change. Without this file,
+# `ruff check` inherits whatever defaults the installed version ships: 0.15.5
+# passed, 0.16.3 raised 72 findings from rule families this project never
+# opted into (BLE001, S110, PLW1510 and friends).
+#
+# line-length is 120 rather than active-fed's 100: the long lines are almost
+# all inside KFP component bodies that embed shell and YAML, where wrapping
+# hurts readability. 100 would mean 40 manual edits in FL code unrelated to
+# CI; 120 means 7.
+select = ["E", "F", "I", "UP"]
