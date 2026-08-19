@@ -1,6 +1,6 @@
 .PHONY: install install-dev test test-cov coverage lint fmt type-check clean build-images \
         single-cluster-setup single-cluster-teardown multi-cluster-setup multi-cluster-teardown compile-pipeline compile-all run-pipeline \
-        clean-results
+        clean-results ci contracts
 
 # ---- Deps ----
 install:
@@ -28,6 +28,18 @@ fmt:
 
 type-check:
 	uv run mypy src/
+
+# ---- CI ----
+ci: lint test
+
+contracts:
+	@set -e; for env in infra.env infra.env.multi; do \
+		echo "=== dry-run $$env ==="; \
+		out=$$(mktemp -d); \
+		bash vendor/fed-infra/bin/fed-infra-up --env "$$env" --dry-run --render-dir "$$out"; \
+		test -n "$$(ls -A $$out)" || { echo "FAIL: $$env rendered nothing"; exit 1; }; \
+		rm -rf "$$out"; \
+	done
 
 # ---- Single Cluster single_cluster ----
 single-cluster-setup:
