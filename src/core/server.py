@@ -1,5 +1,6 @@
-import flwr as fl
 import os
+
+import flwr as fl
 
 ROUNDS = int(os.getenv("FL_ROUNDS", "5"))
 EVAL_EPISODES = int(os.getenv("EVAL_EPISODES", "20"))

@@ -1,7 +1,7 @@
 import json
-from kfp import dsl
-from kfp import compiler
-from kfp.dsl import Output, Artifact
+
+from kfp import compiler, dsl
+from kfp.dsl import Artifact, Output
 
 
 @dsl.component(base_image="fed-twin-app:v1")
@@ -17,10 +17,10 @@ def train_federated_karmada(
     mlflow_exp_name: str,
     metrics: Output[Artifact],
 ):
+    import csv
+    import re
     import subprocess
     import time
-    import re
-    import csv
 
     kubectl_path = "/usr/local/bin/kubectl"
 
@@ -467,7 +467,8 @@ spec:
             # Exit 1: all pods signalled they are done AND expected metrics are captured
             if idle_signals >= total_pods and metric_count >= expected:
                 print(
-                    f"[SUCCESS] All {total_pods} pods finished and expected metrics ({metric_count}/{expected}) captured. Finishing.",
+                    f"[SUCCESS] All {total_pods} pods finished and expected metrics "
+                    f"({metric_count}/{expected}) captured. Finishing.",
                     flush=True,
                 )
                 break
@@ -518,7 +519,7 @@ spec:
 
 # Load Config Defaults
 try:
-    with open("config/config.json", "r") as f:
+    with open("config/config.json") as f:
         config_data = json.load(f)
 except FileNotFoundError:
     config_data = {"fl_rounds": 5, "num_workers": 3, "local_episodes": 5}

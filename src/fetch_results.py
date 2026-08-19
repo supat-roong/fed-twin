@@ -1,6 +1,7 @@
-import boto3
 import os
 import sys
+
+import boto3
 from botocore.client import Config
 
 # Configuration
@@ -22,7 +23,7 @@ def fetch_results():
         print(f"No run ID found for {pipeline_type}. Run automate_run.py first.")
         return
 
-    with open(last_run_file, "r") as f:
+    with open(last_run_file) as f:
         run_id = f.read().strip()
 
     print(f"Fetching results for Run ID: {run_id} ({pipeline_type})")
@@ -61,7 +62,7 @@ def fetch_results():
                 temp_file = "/tmp/temp_metrics.csv"
                 bucket.download_file(obj.key, temp_file)
 
-                with open(temp_file, "r") as f_in:
+                with open(temp_file) as f_in:
                     lines = f_in.readlines()
                     if not lines:
                         continue
@@ -86,7 +87,7 @@ def fetch_results():
         # Sort the consolidated CSV by Round (index 0) and then by Mode (index 2)
         import csv
 
-        with open(local_metrics_csv, "r") as f:
+        with open(local_metrics_csv) as f:
             reader = csv.reader(f)
             header = next(reader)
             data = list(reader)

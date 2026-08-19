@@ -1,8 +1,8 @@
 import json
-from kfp import dsl
-from kfp import compiler
+
+from kfp import compiler, dsl
+from kfp.dsl import Artifact, Output
 from kubernetes import config
-from kfp.dsl import Output, Artifact
 
 
 @dsl.component(
@@ -20,12 +20,13 @@ def train_federated(
     mlflow_exp_name: str,
     metrics: Output[Artifact],
 ):
-    import os
-    import subprocess
-    import requests
-    import time
-    import re
     import csv
+    import os
+    import re
+    import subprocess
+    import time
+
+    import requests
     from jinja2 import Template
 
     # Install kubectl manually to /tmp since we might not have root
@@ -225,7 +226,8 @@ spec:
             elapsed = time.time() - start_time
             if elapsed > timeout_seconds:
                 print(
-                    f"[WARNING] Timeout reached after {elapsed:.0f} seconds. Processed {line_count} lines, found {metric_count} metrics."
+                    f"[WARNING] Timeout reached after {elapsed:.0f} seconds. "
+                    f"Processed {line_count} lines, found {metric_count} metrics."
                 )
                 break
 
@@ -297,7 +299,8 @@ spec:
 
                     if all_terminal and metric_count >= expected_metrics:
                         print(
-                            f"[SUCCESS] Job completed successfully and expected metrics ({metric_count}/{expected_metrics}) captured."
+                            f"[SUCCESS] Job completed successfully and expected metrics "
+                            f"({metric_count}/{expected_metrics}) captured."
                         )
                         job_completed = True
                         # Extended grace period to ensure all logs are flushed
@@ -355,7 +358,7 @@ spec:
 
 # Load Config Defaults
 try:
-    with open("config/config.json", "r") as f:
+    with open("config/config.json") as f:
         config = json.load(f)
 except FileNotFoundError:
     config = {"fl_rounds": 5, "num_workers": 3, "local_episodes": 5}

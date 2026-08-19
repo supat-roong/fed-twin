@@ -1,5 +1,5 @@
-import sys
 import os
+import sys
 from unittest.mock import patch
 
 # Add src and src/core to Python path

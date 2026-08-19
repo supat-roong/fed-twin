@@ -1,11 +1,11 @@
-from kfp import dsl
-from kfp import compiler
-from kfp.dsl import Input, Output, Model, Artifact
 import json
+
+from kfp import compiler, dsl
+from kfp.dsl import Artifact, Input, Model, Output
 
 # Load Config Defaults
 try:
-    with open("config/config.json", "r") as f:
+    with open("config/config.json") as f:
         config = json.load(f)
 except FileNotFoundError:
     config = {"fl_rounds": 5, "local_episodes": 10}
@@ -18,8 +18,9 @@ MLFLOW_URI = "http://mlflow-service.kubeflow:5000"
 def initialize_model_visual(
     run_name: str, mlflow_run_id: str, mlflow_exp_name: str, model: Output[Model]
 ):
-    import torch
     import os
+
+    import torch
     from engine import PolicyNet
     from tracking import setup_mlflow
 
@@ -47,11 +48,12 @@ def eval_step(
     entropy_coeff: float = 0.01,
     max_grad_norm: float = 0.5,
 ):
-    import torch
     import csv
     import os
-    from engine import PolicyNet, get_parameters
+
+    import torch
     from client import TwinClient
+    from engine import PolicyNet, get_parameters
     from tracking import setup_mlflow
 
     os.environ["MLFLOW_EXPERIMENT_NAME"] = mlflow_exp_name
@@ -99,11 +101,12 @@ def train_step(
     entropy_coeff: float = 0.01,
     max_grad_norm: float = 0.5,
 ):
-    import torch
     import csv
     import os
-    from engine import PolicyNet, get_parameters
+
+    import torch
     from client import TwinClient
+    from engine import PolicyNet, get_parameters
     from tracking import setup_mlflow
 
     os.environ["MLFLOW_EXPERIMENT_NAME"] = mlflow_exp_name
