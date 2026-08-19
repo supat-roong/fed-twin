@@ -9,14 +9,13 @@ concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
-permissions:
-  contents: write   # required to create a Release on a tag
-  packages: write   # required to push to GHCR
-
 jobs:
   images:
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    permissions:
+      contents: read    # only needs to check out the repo
+      packages: write   # required to push to GHCR
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
@@ -29,6 +28,12 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ghcr.io/${{ github.repository_owner }}/fed-twin-app
+          # Produces exactly three tags, no floating `latest`:
+          #   <branch>     (e.g. main)     on branch pushes, for traceability
+          #   sha-<short>                  on every push, for traceability
+          #   <version>    (e.g. 1.2.3)    on v* tags, for pinning
+          flavor: |
+            latest=false
           tags: |
             type=ref,event=branch
             type=sha,prefix=sha-
@@ -48,6 +53,8 @@ jobs:
     needs: images
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      contents: write   # required to create a Release on a tag
     steps:
       - uses: actions/checkout@v4
       - uses: softprops/action-gh-release@v2
