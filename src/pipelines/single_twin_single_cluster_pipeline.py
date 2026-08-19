@@ -291,6 +291,16 @@ spec:
                 f"[WARNING] Warning: Only captured {metric_count}/{expected_metrics} expected metrics"
             )
 
+
+    # A run that captured no metrics at all is a failed run, not a warning --
+    # see the identical guard in fed_twin_single_cluster_pipeline.py for why.
+    if metric_count == 0:
+        raise RuntimeError(
+            f"captured 0 of {expected_metrics} expected metrics: the log scrape "
+            f"produced no data, so this run has no results. Check the training "
+            f"pods' logs -- the training itself may well have succeeded."
+        )
+
     print("Training job finished.")
 
 

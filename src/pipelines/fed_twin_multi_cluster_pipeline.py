@@ -496,6 +496,25 @@ spec:
 
     print(f"Monitoring complete. Total metrics captured: {metric_count}")
 
+    # A run that captured no metrics at all is a failed run, not a warning.
+    # The scrape is how results leave the cluster: with zero rows the CSV is a
+    # bare header, every downstream plot is empty, and the pipeline previously
+    # still reported Succeeded -- so a raced or broken scrape was
+    # indistinguishable from a good run without opening the file. Observed
+    # live during the P3/P4 gates ("0 metrics captured", exit 0, header-only
+    # CSV, KFP green).
+    #
+    # Deliberately fails only on *zero*. A partial capture still yields usable
+    # data and stays a warning, because failing a long training run over a few
+    # missing rows would trade one bad outcome for another.
+    if metric_count == 0:
+        raise RuntimeError(
+            f"captured 0 of {expected} expected metrics: the log scrape "
+            f"produced no data, so this run has no results. Check the training "
+            f"pods' logs -- the training itself may well have succeeded."
+        )
+
+
 
 # Load Config Defaults
 try:
