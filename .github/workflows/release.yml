@@ -2,22 +2,59 @@ name: Release
 
 on:
   push:
-    branches: [main]
     tags: ["v*"]
+  # CI never runs against a tag push (its own trigger is push:branches:[main]
+  # plus pull_request), so a tag keeps using the direct `push` trigger above.
+  # A push to main instead waits for CI to finish and only proceeds on a
+  # green run -- this is what stops a red main from still being published,
+  # which a same-triggers `on: push: branches: [main]` here could not do
+  # (this workflow has no way to `needs:` a job in another workflow file).
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ github.event.workflow_run.head_sha || github.ref }}
   cancel-in-progress: false
 
 jobs:
   images:
+    # Two independent ways in, both must actually mean "safe to publish":
+    #   - push (tag):    a v* tag push. No CI run exists for tags, so there
+    #                     is nothing to gate on; publishing a tag has always
+    #                     been an explicit, deliberate act.
+    #   - workflow_run:   the CI workflow just finished. Only act when it
+    #                     succeeded, and only when it was CI's reaction to a
+    #                     push (not a pull_request run) to main -- otherwise
+    #                     a PR's own green CI would also fire this and
+    #                     publish images off a non-main commit.
+    if: |
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_branch == 'main')
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
       contents: read    # only needs to check out the repo
       packages: write   # required to push to GHCR
     steps:
+      - name: Resolve the commit to build
+        # Under workflow_run, github.sha/github.ref are the default branch's
+        # latest commit, NOT the commit CI just validated -- checking out
+        # the default ref here would silently build and publish the wrong
+        # code. head_sha is the only reliable pointer to the validated
+        # commit; a tag push has no workflow_run event, so it falls back to
+        # github.sha (correct for that trigger).
+        id: rev
+        run: |
+          sha="${{ github.event.workflow_run.head_sha || github.sha }}"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "short_sha=${sha:0:7}" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.rev.outputs.sha }}
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
         with:
@@ -28,16 +65,22 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ghcr.io/${{ github.repository_owner }}/fed-twin-app
-          # Produces exactly three tags, no floating `latest`:
-          #   <branch>     (e.g. main)     on branch pushes, for traceability
-          #   sha-<short>                  on every push, for traceability
-          #   <version>    (e.g. 1.2.3)    on v* tags, for pinning
+          # Produces exactly these tags, no floating `latest`:
+          #   main         on a green CI run triggered by a push to main
+          #   sha-<short>  on every publish, for traceability
+          #   <version>    (e.g. 1.2.3) on v* tags, for pinning
+          #
+          # Set explicitly rather than derived from `type=ref`/`type=sha`:
+          # under workflow_run, the ref/sha context is the default branch's,
+          # not this build's commit, so the automatic ref-based tag types
+          # cannot be trusted to produce `main` or `sha-<short>` here. Each
+          # tag is driven off the actual trigger instead.
           flavor: |
             latest=false
           tags: |
-            type=ref,event=branch
-            type=sha,prefix=sha-
-            type=semver,pattern={{version}}
+            type=raw,value=main,enable=${{ github.event_name == 'workflow_run' }}
+            type=raw,value=sha-${{ steps.rev.outputs.short_sha }}
+            type=semver,pattern={{version}},enable=${{ github.event_name == 'push' }}
       - uses: docker/build-push-action@v5
         with:
           context: .
@@ -49,7 +92,11 @@ jobs:
           cache-to: type=gha,mode=max
 
   release:
-    if: startsWith(github.ref, 'refs/tags/v')
+    # Only a direct v* tag push cuts a Release. Under workflow_run,
+    # github.ref is the default branch's ref, never a tag, so gating on
+    # event_name (rather than parsing github.ref) is what actually
+    # distinguishes the two triggers here.
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     needs: images
     runs-on: ubuntu-latest
     timeout-minutes: 10
