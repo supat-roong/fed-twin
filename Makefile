@@ -30,7 +30,7 @@ type-check:
 	uv run mypy src/
 
 # ---- CI ----
-ci: lint test
+ci: lint test compile-pipeline
 
 contracts:
 	@set -e; for env in infra.env infra.env.multi; do \
