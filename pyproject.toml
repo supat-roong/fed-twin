@@ -21,15 +21,18 @@ dependencies = [
     "requests==2.32.5",
     "seaborn==0.13.2",
     "torch==2.2.2",
+    "minio>=7.2.0",
     "mlflow-skinny>=2.20.0",
     "flask>=3.0.0",
     "flask-cors>=4.0.0",
     "sqlalchemy>=2.0.0",
+    "temporalio>=1.7.0",
 ]
 
 [dependency-groups]
 dev = [
     "pytest>=9.0.2",
+    "pytest-asyncio>=0.23.0",
     "pytest-cov>=7.0.0",
     "pytest-xdist>=3.5.0",
     "ruff>=0.15.5",
@@ -52,3 +55,8 @@ target-version = "py310"
 # hurts readability. 100 would mean 40 manual edits in FL code unrelated to
 # CI; 120 means 7.
 select = ["E", "F", "I", "UP"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v --tb=short"
+asyncio_mode = "auto"
