@@ -397,10 +397,16 @@ def train_workers(
     from src.orchestration.types import RoundSpec
     from src.orchestration.workflows import TASK_QUEUE, TrainRoundWorkflow
 
+    # num_workers counts training twins (config.json's meaning under the
+    # flower launcher); the fleet adds rank 0, the eval-only twin, on top --
+    # preserving flower's `replicas: num_workers + 1` semantics (D5) and its
+    # exact per-round CSV row count. The +1 lives here, inside the component,
+    # because KFP cannot do arithmetic on a dsl parameter at trace time.
+    fleet_size = num_workers + 1
     spec = RoundSpec(
         fl_round=fl_round,
-        num_workers=num_workers,
-        min_workers=num_workers,
+        num_workers=fleet_size,
+        min_workers=fleet_size,
         local_episodes=local_episodes,
         eval_episodes=eval_episodes,
         namespace=namespace,
@@ -499,7 +505,10 @@ def aggregate_round(
         secret_key=minio_secret_key,
         secure=False,
     )
-    run_aggregate_round(minio_client, minio_bucket, fl_round, num_workers)
+    # num_workers counts training twins; the fleet is num_workers + 1 (rank 0
+    # is the eval twin). run_aggregate_round reads ranks 1..fleet-1, i.e.
+    # exactly the num_workers training twins.
+    run_aggregate_round(minio_client, minio_bucket, fl_round, num_workers + 1)
 
 
 @dsl.component(base_image="fed-twin-app:v1", packages_to_install=[])
@@ -532,7 +541,9 @@ def collect_metrics_csv(
         secret_key=minio_secret_key,
         secure=False,
     )
-    rows = collect_metrics_rows(minio_client, minio_bucket, fl_rounds, num_workers)
+    # num_workers counts training twins; the fleet is num_workers + 1 (rank 0
+    # is the eval twin). collect_metrics_rows reads ranks 0..fleet-1.
+    rows = collect_metrics_rows(minio_client, minio_bucket, fl_rounds, num_workers + 1)
 
     with open(metrics.path, "w", newline="") as f:
         writer = csv.writer(f)

@@ -35,8 +35,10 @@ class _FakeHandle:
 class _FakeClient:
     def __init__(self, handle):
         self._handle = handle
+        self.started_specs = []
 
     async def start_workflow(self, *args, **kwargs):
+        self.started_specs.append(args[1])
         return self._handle
 
 
@@ -110,3 +112,27 @@ def test_worker_report_artifact_written_on_success(tmp_path, monkeypatch):
     assert payload["succeeded"] == [0, 1, 2]
     assert payload["failed"] == []
     assert payload["temporal_workflow_id"] == "ftwn-train-abcdef12-r0"
+
+
+def test_fleet_includes_the_eval_twin_beyond_num_workers(tmp_path, monkeypatch):
+    """num_workers counts training twins (config.json's flower-era meaning);
+    the RoundSpec fleet must be num_workers + 1, adding the rank-0 eval twin
+    -- preserving flower's `replicas: num_workers + 1` semantics (D5).
+    """
+    report = RoundReport(fl_round=0, results=[])
+    handle = _FakeHandle(statuses={}, cause=None, report=report)
+    client = _FakeClient(handle)
+
+    async def fake_connect(target_host, **kwargs):
+        return client
+
+    import temporalio.client
+    monkeypatch.setattr(temporalio.client.Client, "connect", fake_connect)
+
+    worker_report = SimpleNamespace(path=str(tmp_path / "worker_report.json"))
+    train_workers.python_func(**_base_kwargs(worker_report))
+
+    assert len(client.started_specs) == 1
+    spec = client.started_specs[0]
+    assert spec.num_workers == 4, "fleet must be num_workers(3) + 1 eval twin"
+    assert spec.min_workers == 4, "quorum must cover the whole fleet"
