@@ -31,6 +31,7 @@ COPY src/core/server.py ./
 COPY src/core/tracking.py ./
 COPY src/core/worker_entrypoint.py ./
 COPY src/core/aggregate.py ./
+COPY src/core/metrics_csv.py ./
 COPY src/orchestration/ ./src/orchestration/
 
 # Entrypoint can be overridden by PyTorchJob/Pipeline
