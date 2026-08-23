@@ -1,6 +1,6 @@
 """
 Dispatch abstraction: create/delete a worker Job either in the local cluster
-(P1's behaviour) or, via Karmada, pinned to exactly one member cluster.
+or, via Karmada, pinned to exactly one member cluster.
 
 Split out of activities.py rather than folded into it: `build_propagation_policy`
 must stay pure and importable without a kubeconfig, exactly like
@@ -156,7 +156,7 @@ def dispatcher_for(spec: WorkerSpec) -> JobDispatcher:
 
 
 class LocalJobDispatcher:
-    """Today's (P1) behaviour: create/delete a batch/v1 Job in the local cluster."""
+    """Create/delete a batch/v1 Job in the local cluster."""
 
     async def ensure_job(self, spec: WorkerSpec) -> str:
         # async only to satisfy JobDispatcher's Protocol (KarmadaJobDispatcher
@@ -199,7 +199,7 @@ class LocalJobDispatcher:
 class KarmadaJobDispatcher:
     """Applies the worker Job and its PropagationPolicy to the Karmada apiserver.
 
-    Uses the same Job manifest (build_job_manifest) P1 builds for the local
+    Uses the same Job manifest build_job_manifest builds for the local
     cluster -- topology is a dispatch-time concern, not a manifest-shape one.
     """
 

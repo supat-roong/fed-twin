@@ -324,16 +324,16 @@ async def wait_for_worker_artifact(
     """Poll MinIO for the one object that means a multi-cluster worker is done.
 
     The host cannot reliably watch a pod Karmada has propagated to a member
-    cluster (see dispatch.py), but train_worker.py's _push_weights already
-    uploads, per worker per round, in this order:
+    cluster (see dispatch.py), but the worker entrypoint
+    (src/core/worker_entrypoint.py) already uploads, per worker per round, in
+    this order:
       1. round_{fl_round}/workers/worker_{worker_id}_weights.pt
-      2. round_{fl_round}/workers/worker_{worker_id}_delta.pt
-      3. round_{fl_round}/workers/worker_{worker_id}_metrics.json
-    and the aggregator (collect.py) already treats the metrics object's
-    presence as "this worker succeeded". Only the metrics key is checked
-    here -- weights and delta land *first*, so a check that stopped at
-    worker_{worker_id}_weights.pt would read a partial, still-in-flight
-    upload as a finished worker.
+      2. round_{fl_round}/workers/worker_{worker_id}_metrics.json
+    and the aggregator (the aggregate_and_evaluate KFP component) already
+    treats the metrics object's presence as "this worker succeeded". Only the
+    metrics key is checked here -- weights land *first*, so a check that
+    stopped at worker_{worker_id}_weights.pt would read a partial,
+    still-in-flight upload as a finished worker.
 
     Heartbeats every failed poll (matching launch_and_watch_pod's
     single-topology loop below) so Temporal can distinguish a slow
@@ -456,7 +456,7 @@ def _minio_client_for(spec: WorkerSpec):
 async def launch_and_watch_pod(spec: WorkerSpec) -> WorkerResult:
     """Create the worker Job if absent, then watch it to completion.
 
-    topology='single' (unchanged from P1, below): watches the Job directly
+    topology='single' (below): watches the Job directly
     via the local Kubernetes API, heartbeating every poll so Temporal can
     distinguish a slow worker from a wedged one.
 
@@ -496,7 +496,7 @@ async def launch_and_watch_pod(spec: WorkerSpec) -> WorkerResult:
                 attempts=await _attempt_count(core, spec, name), failure_reason="", job_name=name,
             )
         if outcome == "failed":
-            # C1: capture the pod's log tail *before* returning -- WorkerWorkflow's
+            # Capture the pod's log tail *before* returning -- WorkerWorkflow's
             # `finally` deletes the Job (and cascades to its pods) within seconds
             # of this activity completing, so this is the last chance to read it.
             reason = await _failure_reason(core, spec, name)
@@ -819,7 +819,7 @@ async def _log_tail(
     """Best-effort tail of the job's pod logs, bounded to `lines`.
 
     Returns the captured text so callers can fold it into a failure message
-    (C1) — never raises, matching _failure_reason's contract that a
+    -- never raises, matching _failure_reason's contract that a
     diagnostic failure must never mask the real outcome.
     """
     try:
@@ -846,7 +846,7 @@ async def cleanup_worker_job(spec: WorkerSpec) -> None:
     topology='multi' delegates to dispatcher_for(spec) (KarmadaJobDispatcher),
     which also deletes the PropagationPolicy that pinned the Job to
     spec.member_cluster -- leaving that behind would leak one Karmada object
-    per finished worker. topology='single' is unchanged from P1: it keeps
+    per finished worker. topology='single' still keeps
     calling _k8s_batch_and_core() directly rather than routing through
     LocalJobDispatcher, which duplicates the same lazy client builder under a
     distinct module-level name in dispatch.py -- existing tests monkeypatch

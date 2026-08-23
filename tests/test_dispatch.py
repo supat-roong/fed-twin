@@ -77,7 +77,7 @@ def test_build_propagation_policy_name_is_a_valid_kubernetes_name():
 
 def test_build_propagation_policy_name_reuses_job_name_fors_validation():
     # job_name_for already raises ValueError on a kfp_run_id that would
-    # produce an invalid Kubernetes name (P1's F4 gate fix). The policy name
+    # produce an invalid Kubernetes name. The policy name
     # must reuse that same discipline rather than inventing a second
     # validation rule -- so an input that job_name_for rejects must also be
     # rejected here, for the same reason.
@@ -98,7 +98,7 @@ def test_build_propagation_policy_raises_on_empty_member_cluster():
         build_propagation_policy(spec)
 
 
-# --- p3-task-3-review.md Finding 2: whitespace/format defeats truthiness ----
+# --- Whitespace/format defeats truthiness -----------------------------------
 # `if not spec.member_cluster:` is Python truthiness -- "   "/"\t\n" are
 # non-empty strings and sail straight through. This doesn't reach the
 # catastrophic empty-clusterNames case (a garbage, non-matching name selects
@@ -165,7 +165,7 @@ def test_dispatcher_for_unknown_topology_raises():
 
 
 # ---------------------------------------------------------------------------
-# LocalJobDispatcher -- wraps the P1 create/delete path. Fake, in-memory
+# LocalJobDispatcher -- wraps the create/delete Job path. Fake, in-memory
 # stand-in for kubernetes.client.BatchV1Api, mirroring the style of
 # test_orchestration_activities.py's FakeBatchApi.
 # ---------------------------------------------------------------------------
@@ -174,7 +174,7 @@ class FakeBatchApi:
     def __init__(self, existing=False):
         self.existing = existing
         self.calls: list[str] = []
-        # p3-task-3-review.md Finding 3: records the body create_namespaced_job
+        # Records the body create_namespaced_job
         # was actually called with, so tests can assert against what the
         # dispatcher *applied* rather than a second, independent
         # build_job_manifest(spec) call that proves nothing about it.
@@ -194,9 +194,9 @@ class FakeBatchApi:
         self.existing = False
 
     def read_namespaced_job_status(self, name, namespace):
-        # Only exercised via _await_job_deleted's delete-then-poll loop
-        # (p3-task-4-review.md Finding 1 fix): it needs to see the Job gone
-        # once delete_namespaced_job has run, on the *same* client used to
+        # Only exercised via _await_job_deleted's delete-then-poll loop: it
+        # needs to see the Job gone once delete_namespaced_job has run, on
+        # the *same* client used to
         # create/delete it -- the Karmada aggregated *status classification*
         # goes through a separate client (_karmada_clients, see
         # FakeKarmadaStatusApi below), so the content returned here is never
@@ -270,7 +270,7 @@ async def test_karmada_dispatcher_ensure_job_is_idempotent(monkeypatch):
     spec = _spec(topology="multi", member_cluster="active-fed-member1")
     batch = FakeBatchApi(existing=True)
     custom = FakeCustomObjectsApi(existing=True)
-    # The aggregated-status lookup (p3-task-4-review.md Finding 1 fix) is a
+    # The aggregated-status lookup is a
     # separate client from `batch` above -- monkeypatch it explicitly here
     # (rather than relying on FED_KARMADA_CONFIG being unset in this
     # environment) so this test's "must not raise" guarantee doesn't
@@ -285,13 +285,13 @@ async def test_karmada_dispatcher_ensure_job_is_idempotent(monkeypatch):
     # Must not raise even though both the Job and the PropagationPolicy
     # already exist from a previous (e.g. retried) attempt.
     await KarmadaJobDispatcher()._ensure_job_with(batch, custom, spec)
-    # ...and, per p3-task-4-review.md Finding 1, must not have deleted the
+    # ...and must not have deleted the
     # still-running Job either.
     assert "delete:Background" not in batch.calls
 
 
 # ---------------------------------------------------------------------------
-# p3-task-4-review.md Finding 1: on a 409 (Job already exists -- exactly what
+# On a 409 (Job already exists -- exactly what
 # a Temporal *activity retry* of a failed worker sees, since job_name_for is
 # deterministic), the pre-fix KarmadaJobDispatcher just swallowed the 409 and
 # re-attached unconditionally. If the existing Job was terminally Failed
@@ -404,8 +404,8 @@ async def test_karmada_dispatcher_ensure_job_deletes_and_recreates_a_terminally_
 async def test_karmada_dispatcher_ensure_job_does_not_delete_on_absent_or_lagging_status(
     monkeypatch,
 ):
-    # THE safety property p3-task-4-review.md Finding 1 warns about most
-    # explicitly: the Karmada aggregated status can be absent or lagging
+    # THE safety property warned about most
+    # explicitly above: the Karmada aggregated status can be absent or lagging
     # right after dispatch (the Job hasn't propagated to the member cluster
     # yet, or the aggregated API hasn't caught up). Absent must mean "not
     # yet", never "failed" -- deleting a healthy, just-propagated Job because
@@ -469,11 +469,12 @@ def test_karmada_dispatcher_delete_job_tolerates_already_gone():
     KarmadaJobDispatcher()._delete_job_with(batch, custom, spec)  # must not raise
 
 
-async def test_karmada_job_manifest_reused_unchanged_from_p1():
-    # KarmadaJobDispatcher must apply the *same* Job manifest P1 builds --
-    # topology is a dispatch-time concern, not a manifest-shape concern.
+async def test_karmada_job_manifest_matches_the_local_dispatchers_manifest():
+    # KarmadaJobDispatcher must apply the *same* Job manifest build_job_manifest
+    # builds for the local dispatcher -- topology is a dispatch-time concern,
+    # not a manifest-shape concern.
     #
-    # p3-task-3-review.md Finding 3: this test used to assert against a
+    # This test used to assert against a
     # *fresh*, independent build_job_manifest(spec) call rather than what
     # _ensure_job_with actually applied, because FakeBatchApi.create_namespaced_
     # job never recorded its `body` argument -- the reviewer proved it stayed
@@ -546,7 +547,8 @@ async def test_karmada_dispatcher_tolerates_an_existing_namespace():
     assert core.created == [], "an already-present namespace must not be recreated"
 
 
-@pytest.mark.skip(
+@pytest.mark.xfail(
+    strict=True,
     reason="fed-twin's k8s/rbac.yaml RBAC swap (nodes get/list for topology='multi') "
     "is Phase 3 work per docs/superpowers/specs/2026-08-23-fed-twin-temporal-retrofit-design.md §3.5 — "
     "not yet applicable while this module is unwired (Phase 1)."

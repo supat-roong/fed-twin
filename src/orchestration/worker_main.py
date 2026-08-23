@@ -3,7 +3,10 @@ Temporal worker process: registers the workflows and activities and polls.
 
 Runs as a Deployment in the consumer namespace. Its ServiceAccount needs
 create/delete on jobs and get/list/watch on pods plus pods/log, because
-`launch_and_watch_pod` does exactly those things.
+`launch_and_watch_pod` does exactly those things, plus get/list on nodes,
+because `_resolve_host_node_ip` (activities.py) needs to read node
+InternalIPs to rewrite the worker's MinIO/MLflow endpoints for
+topology='multi'.
 """
 
 from __future__ import annotations

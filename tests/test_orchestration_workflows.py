@@ -45,6 +45,14 @@ def _ok(spec: WorkerSpec) -> WorkerResult:
                         failure_reason="", job_name=f"j{spec.worker_id}")
 
 
+def test_task_queue_is_fed_twins_own():
+    # Not otherwise asserted anywhere in this suite -- a silent revert back
+    # to active-fed's original "active-fed" task queue name would pass every
+    # other test here undetected (worker and client just have to agree with
+    # each other, whatever the string is).
+    assert TASK_QUEUE == "fed-twin"
+
+
 async def _run(env: WorkflowEnvironment, acts, spec: RoundSpec):
     async with Worker(
         env.client, task_queue=TASK_QUEUE,
@@ -360,7 +368,7 @@ async def test_real_activity_failure_reaches_round_report_with_useful_message(mo
 
 
 # ---------------------------------------------------------------------------
-# P4 Task 2: kfp_run_id carried in the workflow memo, so the Temporal UI can
+# kfp_run_id carried in the workflow memo, so the Temporal UI can
 # reverse-link back to the KFP round without opening the workflow's history.
 # ---------------------------------------------------------------------------
 @pytest.mark.asyncio

@@ -121,7 +121,7 @@ class TrainRoundWorkflow:
     async def run(self, spec: RoundSpec) -> RoundReport:
         parent_id = workflow.info().workflow_id
 
-        # P4 Task 2: carry kfp_run_id in the workflow memo so the Temporal UI
+        # Carry kfp_run_id in the workflow memo so the Temporal UI
         # can reverse-link back to the KFP round (KFP -> Temporal is already
         # covered by the URL train_workers prints; this is the other
         # direction) without opening the workflow's full event history.

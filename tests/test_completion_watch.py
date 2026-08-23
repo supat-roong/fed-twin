@@ -1,13 +1,14 @@
 """
-P3 Task 4: MinIO-based completion detection for topology='multi' workers.
+MinIO-based completion detection for topology='multi' workers.
 
 The host cannot reliably watch a pod Karmada has propagated to a member
-cluster (see src/orchestration/dispatch.py), but train_worker.py already
-uploads weights, then a delta, then a metrics JSON per worker per round
-(_push_weights) -- and the aggregator (src/aggregator/collect.py) already
-treats the metrics object's presence as "this worker is done". These tests
-cover wait_for_worker_artifact, the function that turns that same signal into
-launch_and_watch_pod's multi-cluster completion check.
+cluster (see src/orchestration/dispatch.py), but the worker entrypoint
+(src/core/worker_entrypoint.py) already uploads its weights, then a metrics
+JSON, per worker per round -- and the aggregator (the aggregate_and_evaluate
+KFP component) already treats the metrics object's presence as "this worker
+is done". These tests cover wait_for_worker_artifact, the function that
+turns that same signal into launch_and_watch_pod's multi-cluster completion
+check.
 
 The subtlety that matters: weights land *before* metrics, so only the
 metrics key may ever be read as completion -- see
@@ -50,10 +51,10 @@ class FakeMinioClient:
       of the normal present/absent check on that specific call. A str value
       is treated as an S3Error code (transient, non-"not found" errors); an
       Exception instance is raised as-is, for scripting connection-level
-      errors (Finding 4) that never reach the S3Error layer at all.
+      errors that never reach the S3Error layer at all.
     - `last_modified`: {key: datetime} overriding the default (now, UTC) a
       present object reports as its last_modified -- lets a test plant an
-      object that predates a given `not_before` cutoff (Finding 3).
+      object that predates a given `not_before` cutoff.
     """
 
     def __init__(
@@ -105,9 +106,9 @@ async def test_returns_true_as_soon_as_the_metrics_object_appears(monkeypatch):
     assert client.calls == 1  # succeeded on the very first poll -- no waiting
 
 
-async def test_polls_the_exact_metrics_key_train_worker_uploads(monkeypatch):
-    # Regression guard for the key format itself, matching train_worker.py's
-    # _push_weights and collect.py's collect_worker_updates.
+async def test_polls_the_exact_metrics_key_the_worker_uploads(monkeypatch):
+    # Regression guard for the key format itself, matching the worker
+    # entrypoint's upload and the aggregator's consumption of it.
     _patch_heartbeat(monkeypatch)
     client = FakeMinioClient(keys={METRICS_KEY})
 
@@ -163,7 +164,7 @@ async def test_tolerates_a_transient_s3_error_and_keeps_polling(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# Finding 4 (p3-task-4-review.md): the transient-error tolerance above only
+# The transient-error tolerance above only
 # catches S3Error, but a MinIO pod restart or network blip raises a
 # connection-level urllib3 exception that never reaches the S3 protocol
 # layer at all. Verified against the installed minio==7.2.20: pointing a
@@ -213,7 +214,7 @@ async def test_does_not_swallow_a_genuine_bug_in_the_poll_loop(monkeypatch):
     # THE guardrail: catching connection-level errors must not widen into
     # catching bare Exception. An AttributeError (or any other real bug) in
     # this loop must still propagate -- swallowing it here already cost this
-    # project a debugging session once (see p3-task-4-review.md, Finding 4).
+    # project a debugging session once.
     _patch_heartbeat(monkeypatch)
     client = FakeMinioClient(keys={METRICS_KEY}, error_calls={1: AttributeError("boom")})
 
@@ -250,11 +251,10 @@ async def test_connection_level_errors_still_respect_the_overall_timeout(monkeyp
 
 
 async def test_does_not_treat_the_weights_object_alone_as_completion(monkeypatch):
-    # THE subtlety: train_worker.py's _push_weights uploads weights, then the
-    # delta, then the metrics JSON, in that order -- so only the metrics
-    # object's appearance means "done". Treating worker_i_weights.pt as
-    # completion would read a partial (weights-uploaded-but-not-finished)
-    # worker as a success.
+    # THE subtlety: the worker uploads its weights, then the metrics JSON, in
+    # that order -- so only the metrics object's appearance means "done".
+    # Treating worker_i_weights.pt as completion would read a partial
+    # (weights-uploaded-but-not-finished) worker as a success.
     _patch_heartbeat(monkeypatch)
     client = FakeMinioClient(keys={WEIGHTS_KEY})  # weights present, metrics never uploaded
 
@@ -270,7 +270,7 @@ async def test_does_not_treat_the_weights_object_alone_as_completion(monkeypatch
 
 
 # ---------------------------------------------------------------------------
-# Finding 2 (p3-task-4-review.md): a crashed multi-cluster worker was only
+# A crashed multi-cluster worker was only
 # ever detected via the full timeout_s, because wait_for_worker_artifact had
 # no way to distinguish "crashed" from "still training". failure_check is an
 # optional zero-arg async callable, polled once per iteration alongside the
@@ -336,7 +336,7 @@ async def test_failure_check_is_optional_and_defaults_to_never_firing(monkeypatc
 
 
 # ---------------------------------------------------------------------------
-# Finding 3 (p3-task-4-review.md): the completion key
+# The completion key
 # (round_{fl_round}/workers/worker_{worker_id}_metrics.json) has no run
 # identifier, so a round resumed via run_pipeline.py's --bucket can find a
 # *previous*, abandoned attempt's metrics object and report a brand-new Job

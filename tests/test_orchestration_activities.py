@@ -49,7 +49,7 @@ def test_job_name_is_a_valid_kubernetes_name():
     assert len(name) <= 63
 
 
-# F4 (gate fix): the KFP deployment in this environment does not substitute
+# The KFP deployment in this environment does not substitute
 # dsl.PIPELINE_JOB_ID_PLACEHOLDER before component code runs, so a kfp_run_id
 # of the literal, unsubstituted string "{{$.pipeline_job_uuid}}" previously
 # reached job_name_for verbatim and produced "ftwn-{{$.pipe-r0-w0", which the
@@ -112,8 +112,19 @@ def test_manifest_passes_round_and_episodes_as_env():
     assert env["EVAL_EPISODES"] == "5"
 
 
+def test_manifest_targets_fed_twins_own_worker_entrypoint():
+    # Neither this container command nor workflows.py's TASK_QUEUE is
+    # asserted anywhere else -- a silent revert of either back to
+    # active-fed's original values (["uv", "run", "python", "-m",
+    # "src.agent.train_worker"] here) would pass the rest of this suite
+    # undetected.
+    c = build_job_manifest(_spec())["spec"]["template"]["spec"]["containers"][0]
+    assert c["command"] == ["python", "-m", "src.core.worker_entrypoint"]
+    assert "args" not in c  # fed-twin's entrypoint takes no CLI args
+
+
 def test_manifest_uses_never_restart_policy():
-    # F5 (gate fix): Temporal now owns retry entirely (backoffLimit=0 below),
+    # Temporal now owns retry entirely (backoffLimit=0 below),
     # so an in-place container restart under restartPolicy=OnFailure would be
     # exactly the per-worker-attribution masking that fix removes -- a
     # crashed container would come back to life inside the *same* Pod and
@@ -129,7 +140,7 @@ def test_manifest_uses_never_restart_policy():
 
 
 def test_manifest_sets_backoff_limit_to_zero():
-    # F5: a non-zero backoffLimit lets the Job controller silently replace a
+    # A non-zero backoffLimit lets the Job controller silently replace a
     # failed/deleted pod under the Job's own umbrella before Temporal's poll
     # loop ever notices -- exactly the masking bug the gate found. 0 means
     # any single pod failure fails the Job immediately.
@@ -312,7 +323,7 @@ async def test_await_job_deleted_raises_on_timeout_instead_of_hanging():
 
 
 # ---------------------------------------------------------------------------
-# C1/I1: launch_and_watch_pod itself. Previously untested at any level (I5) --
+# launch_and_watch_pod itself. Previously untested at any level --
 # these drive the activity end-to-end against fake Batch/Core clients,
 # monkeypatching _k8s_batch_and_core (the one seam that needs a real
 # kubeconfig) rather than a real cluster.
@@ -360,11 +371,11 @@ class FakeCoreApi:
 
 
 async def test_launch_and_watch_pod_raises_with_reason_and_log_tail_on_job_failure(monkeypatch):
-    # C1: the pod's log is the only evidence of *why* a worker died, and it is
+    # The pod's log is the only evidence of *why* a worker died, and it is
     # captured nowhere on the failure path today -- it must be read here,
     # before the activity returns/raises, since WorkerWorkflow's cleanup
     # deletes the Job (and cascades to the pod) within seconds of that.
-    # I1: a Job failure must raise, not return WorkerResult(succeeded=False),
+    # A Job failure must raise, not return WorkerResult(succeeded=False),
     # because Temporal only retries activities on raised exceptions.
     import src.orchestration.activities as activities_module
     from src.orchestration.activities import WorkerJobFailed
@@ -405,15 +416,15 @@ async def test_launch_and_watch_pod_returns_normally_on_success(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# P3 Task 4: topology='multi' wiring. launch_and_watch_pod must dispatch via
+# topology='multi' wiring. launch_and_watch_pod must dispatch via
 # dispatcher_for(spec) and wait on the MinIO completion artifact instead of
 # watching the pod directly; cleanup_worker_job must route through the same
 # dispatcher so a member-cluster worker's PropagationPolicy gets cleaned up
 # too. topology='single' specs (all tests above) must still take the exact
-# P1 code path -- the _forbid_k8s_batch_and_core guard below is a deliberate
-# regression check that the multi branch never touches the local-cluster
-# client, and doubles as a safety net against ever reaching a real
-# kubeconfig if the branch selection regresses.
+# original single-cluster code path -- the _forbid_k8s_batch_and_core guard
+# below is a deliberate regression check that the multi branch never touches
+# the local-cluster client, and doubles as a safety net against ever
+# reaching a real kubeconfig if the branch selection regresses.
 # ---------------------------------------------------------------------------
 
 
@@ -421,8 +432,7 @@ def _multi_spec(**overrides) -> WorkerSpec:
     # minio_nodeport/mlflow_nodeport default to the same values
     # infra.env.multi/config/k8s-multi.yaml actually carry -- every real
     # topology='multi' WorkerSpec has these configured (see
-    # test_orchestration_types.py's threading tests and
-    # test_active_fl_pipeline.py's infra-contract tests), so a test built from
+    # test_orchestration_types.py's threading tests), so a test built from
     # this helper that doesn't care about the endpoint rewrite shouldn't have
     # to think about it.
     base = dict(minio_nodeport=30900, mlflow_nodeport=30500)
@@ -440,10 +450,10 @@ class FakeDispatcher:
         self.received_specs: list[WorkerSpec] = []
 
     async def ensure_job(self, spec):
-        # async to match JobDispatcher.ensure_job's Protocol (p3-task-3-review.md
-        # Finding 1 fix: KarmadaJobDispatcher._ensure_job_with needs to await a
-        # delete-and-recreate poll on 409, so the Protocol -- and its callers,
-        # launch_and_watch_pod included -- await ensure_job unconditionally).
+        # async to match JobDispatcher.ensure_job's Protocol (KarmadaJobDispatcher
+        # ._ensure_job_with needs to await a delete-and-recreate poll on 409,
+        # so the Protocol -- and its callers, launch_and_watch_pod included --
+        # await ensure_job unconditionally).
         self.ensure_calls.append(spec.worker_id)
         self.received_specs.append(spec)
         return f"fake-job-w{spec.worker_id}"
@@ -457,7 +467,7 @@ class FakeMinioClientForActivities:
 
     last_modified defaults to "now" (matching a real object that just
     landed); pass an explicit value to simulate a stale artifact left over
-    from a previous attempt (Finding 3, p3-task-4-review.md).
+    from a previous attempt.
     """
 
     def __init__(self, present: bool, last_modified: datetime | None = None):
@@ -599,7 +609,7 @@ async def test_cleanup_worker_job_multi_topology_deletes_via_dispatcher(monkeypa
 
 
 # ---------------------------------------------------------------------------
-# Finding 2 (p3-task-4-review.md): a crashed multi-cluster worker was only
+# A crashed multi-cluster worker was only
 # detected via wait_for_worker_artifact's full timeout_s, because nothing
 # actively consulted the Karmada aggregated Job status *during* the wait --
 # only after it gave up, as best-effort diagnostics (_karmada_failure_reason).
@@ -727,13 +737,13 @@ async def test_launch_and_watch_pod_multi_topology_fast_fails_on_terminal_karmad
         await launch_and_watch_pod(_multi_spec())
     elapsed = time.monotonic() - start
 
-    # The whole point of Finding 2: nowhere near the 5s POD_WATCH_TIMEOUT_S,
+    # The whole point: nowhere near the 5s POD_WATCH_TIMEOUT_S,
     # let alone the real 3600s default.
     assert elapsed < 1.0
 
 
 # ---------------------------------------------------------------------------
-# Finding 3 (p3-task-4-review.md): the reviewer's own repro, at the
+# The reviewer's own repro, at the
 # launch_and_watch_pod level -- pre-seed a stale metrics object (as if left
 # over from a previous, abandoned attempt at this same round/worker) *before*
 # this attempt's Job is even created. Before the fix, wait_for_worker_artifact
@@ -777,7 +787,7 @@ async def test_launch_and_watch_pod_multi_topology_ignores_a_preexisting_stale_a
 
 
 # ---------------------------------------------------------------------------
-# P3 multi-endpoints fix: topology='multi' worker pods run on a Karmada
+# topology='multi' worker pods run on a Karmada
 # *member* cluster with its own DNS -- WorkerSpec.minio_endpoint/
 # mlflow_tracking_uri are in-cluster DNS names belonging to the *host*
 # cluster, so they never resolve there. This is the bug the live gate found:

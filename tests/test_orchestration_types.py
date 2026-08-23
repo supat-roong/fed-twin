@@ -1,7 +1,6 @@
+import dataclasses
 import os
 import sys
-
-import dataclasses
 
 import pytest
 
@@ -94,7 +93,7 @@ def test_worker_spec_inherits_round_topology():
 
 
 # ---------------------------------------------------------------------------
-# P3 multi-endpoints fix: minio_nodeport/mlflow_nodeport. Only meaningful
+# minio_nodeport/mlflow_nodeport. Only meaningful
 # under topology="multi" (see src/orchestration/activities.py's endpoint
 # rewrite, which reads them off the WorkerSpec it dispatches), but carried on
 # both RoundSpec and WorkerSpec the same way member_count/member_prefix
@@ -184,7 +183,7 @@ def test_multi_topology_with_negative_member_count_raises():
         spec.worker_spec(0)
 
 
-# --- p3-task-3-review.md Finding 2: whitespace/format defeats truthiness ----
+# --- Whitespace/format defeats truthiness -----------------------------------
 # `if not self.member_prefix:` is Python truthiness -- "   "/"\t\n" are
 # non-empty strings and sail straight through, producing a member_cluster
 # like "   1" that selects zero real Karmada clusters (see dispatch.py's
