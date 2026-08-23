@@ -356,12 +356,207 @@ spec:
     print("Training job finished monitoring.")
 
 
+@dsl.component(base_image="fed-twin-app:v1", packages_to_install=[])
+def train_workers(
+    fl_round: int,
+    num_workers: int,
+    local_episodes: int,
+    eval_episodes: int,
+    namespace: str,
+    temporal_address: str,
+    kfp_run_id: str,
+    mlflow_tracking_uri: str,
+    mlflow_experiment_name: str,
+    mlflow_run_id: str,
+    minio_endpoint: str,
+    minio_access_key: str,
+    minio_secret_key: str,
+    minio_bucket: str,
+    worker_image: str,
+    learning_rate: float,
+    gamma: float,
+    entropy_coeff: float,
+    max_grad_norm: float,
+    worker_report: Output[Artifact],
+):
+    """Run one round's worker fleet via Temporal, blocking on the result.
+
+    Starts a TrainRoundWorkflow with a deterministic workflow id (kfp_run_id
+    + fl_round), so a retried KFP step reattaches to the already-running
+    round instead of launching a second one.
+    """
+    import asyncio
+    import json
+    import sys
+
+    sys.path.insert(0, "/app")
+
+    from temporalio.client import Client, WorkflowFailureError
+    from temporalio.common import WorkflowIDConflictPolicy
+
+    from src.orchestration.types import RoundSpec
+    from src.orchestration.workflows import TASK_QUEUE, TrainRoundWorkflow
+
+    spec = RoundSpec(
+        fl_round=fl_round,
+        num_workers=num_workers,
+        min_workers=num_workers,
+        local_episodes=local_episodes,
+        eval_episodes=eval_episodes,
+        namespace=namespace,
+        worker_image=worker_image,
+        minio_endpoint=minio_endpoint,
+        minio_access_key=minio_access_key,
+        minio_secret_key=minio_secret_key,
+        minio_bucket=minio_bucket,
+        mlflow_tracking_uri=mlflow_tracking_uri,
+        mlflow_experiment_name=mlflow_experiment_name,
+        mlflow_run_id=mlflow_run_id,
+        kfp_run_id=kfp_run_id,
+        learning_rate=learning_rate,
+        gamma=gamma,
+        entropy_coeff=entropy_coeff,
+        max_grad_norm=max_grad_norm,
+    )
+
+    async def _run() -> dict:
+        client = await Client.connect(temporal_address)
+        handle = await client.start_workflow(
+            TrainRoundWorkflow.run,
+            spec,
+            id=f"ftwn-train-{kfp_run_id[:8]}-r{fl_round}",
+            task_queue=TASK_QUEUE,
+            id_conflict_policy=WorkflowIDConflictPolicy.USE_EXISTING,
+        )
+        print(f"started Temporal workflow {handle.id}")
+        print(
+            "Temporal workflow: "
+            f"http://localhost:8233/namespaces/default/workflows/{handle.id}"
+        )
+        try:
+            report = await handle.result()
+        except WorkflowFailureError as e:
+            # Mirrors active-fed's own fix for the identical gap: without
+            # this, a quorum failure raises before the per-worker
+            # attribution the workflow already tracked ever reaches an
+            # artifact. The round must still fail -- re-raise after writing
+            # what's known.
+            statuses = await handle.query(TrainRoundWorkflow.status)
+            payload = {
+                "fl_round": fl_round,
+                "succeeded": sorted(
+                    wid for wid, s in statuses.items() if s.phase == "Succeeded"
+                ),
+                "failed": sorted(
+                    wid for wid, s in statuses.items() if s.phase != "Succeeded"
+                ),
+                "results": [vars(statuses[wid]) for wid in sorted(statuses)],
+                "temporal_workflow_id": handle.id,
+                "error": str(e),
+            }
+            print(json.dumps(payload, indent=2))
+            with open(worker_report.path, "w") as f:
+                json.dump(payload, f, indent=2)
+            raise
+        return {
+            "fl_round": report.fl_round,
+            "succeeded": report.succeeded_ids,
+            "failed": report.failed_ids,
+            "results": [vars(r) for r in report.results],
+            "temporal_workflow_id": handle.id,
+        }
+
+    payload = asyncio.run(_run())
+    print(json.dumps(payload, indent=2))
+    with open(worker_report.path, "w") as f:
+        json.dump(payload, f, indent=2)
+
+
+@dsl.component(base_image="fed-twin-app:v1", packages_to_install=[])
+def aggregate_round(
+    fl_round: int,
+    num_workers: int,
+    minio_endpoint: str,
+    minio_access_key: str,
+    minio_secret_key: str,
+    minio_bucket: str,
+):
+    """Mean the round's training-worker weights and write the next round's
+    global checkpoint. No evaluation logic lives here -- the eval-twin
+    (worker 0, RANK==0) already ran inside the worker fleet itself.
+    """
+    import sys
+
+    sys.path.insert(0, "/app")
+
+    from minio import Minio
+
+    from aggregate import run_aggregate_round
+
+    minio_client = Minio(
+        endpoint=minio_endpoint,
+        access_key=minio_access_key,
+        secret_key=minio_secret_key,
+        secure=False,
+    )
+    run_aggregate_round(minio_client, minio_bucket, fl_round, num_workers)
+
+
+@dsl.component(base_image="fed-twin-app:v1", packages_to_install=[])
+def collect_metrics_csv(
+    fl_rounds: int,
+    num_workers: int,
+    minio_endpoint: str,
+    minio_access_key: str,
+    minio_secret_key: str,
+    minio_bucket: str,
+    metrics: Output[Artifact],
+):
+    """Read every round's worker metrics.json from MinIO and write the same
+    (round, twin_id, mode, reward, loss) CSV the flower-launcher path already
+    produces from its log-scrape -- runs once, after every round has
+    finished, not per-round.
+    """
+    import csv
+    import sys
+
+    sys.path.insert(0, "/app")
+
+    from minio import Minio
+
+    from metrics_csv import collect_metrics_rows
+
+    minio_client = Minio(
+        endpoint=minio_endpoint,
+        access_key=minio_access_key,
+        secret_key=minio_secret_key,
+        secure=False,
+    )
+    rows = collect_metrics_rows(minio_client, minio_bucket, fl_rounds, num_workers)
+
+    with open(metrics.path, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["round", "twin_id", "mode", "reward", "loss"])
+        writer.writerows(rows)
+
+    print(f"Collected {len(rows)} metric rows across {fl_rounds} rounds.")
+
+
 # Load Config Defaults
 try:
     with open("config/config.json") as f:
         config = json.load(f)
 except FileNotFoundError:
     config = {"fl_rounds": 5, "num_workers": 3, "local_episodes": 5}
+
+# D6: gates the Flower->MinIO cutover. Resolved at trace time (module
+# import), never as a dsl.pipeline parameter -- KFP freezes the DAG shape
+# (including the round loop below) the moment this module's @dsl.pipeline
+# function is defined, so a runtime parameter could never change how many
+# train_workers tasks exist. Same trap active-fed's own
+# active_fl_pipeline.py hit and documents at length for its own
+# fl_rounds/start_round handling.
+WORKER_LAUNCHER = config.get("worker_launcher", "flower")
 
 
 @dsl.pipeline(
@@ -377,23 +572,85 @@ def fed_twin_single_cluster_pipeline(
     run_name: str = "fl_run_default",
     mlflow_run_id: str = "",
     mlflow_exp_name: str = "Fed-Twin-Single-Cluster",
+    temporal_address: str = "temporal-frontend.kubeflow.svc.cluster.local:7233",
+    minio_endpoint: str = "minio-service.kubeflow.svc.cluster.local:9000",
+    minio_access_key: str = "minio",
+    minio_secret_key: str = "minio123",
+    minio_bucket: str = "mlflow-artifacts",
+    worker_image: str = "fed-twin-app:v1",
 ):
     import time
 
     job_id = str(int(time.time()))
 
-    # Single component that does everything
-    train_federated(
-        namespace=namespace,
-        fl_rounds=fl_rounds,
-        num_workers=num_workers,
-        local_episodes=local_episodes,
-        eval_episodes=eval_episodes,
-        job_id=job_id,
-        run_name=run_name,
-        mlflow_run_id=mlflow_run_id,
-        mlflow_exp_name=mlflow_exp_name,
-    ).set_env_variable("MLFLOW_TRACKING_URI", "http://mlflow-service.kubeflow:5000")
+    if WORKER_LAUNCHER == "minio":
+        # fl_rounds above is a dsl.pipeline parameter -- a
+        # PipelineParameterChannel placeholder at trace time, not a real
+        # int, so it cannot bound this range() (see Global Constraints).
+        # config is a plain dict read at trace time above; reading it again
+        # here gives a concrete int this loop can safely use.
+        prev_op = None
+        for round_idx in range(config.get("fl_rounds", 5)):
+            train_op = train_workers(
+                fl_round=round_idx,
+                num_workers=num_workers,
+                local_episodes=local_episodes,
+                eval_episodes=eval_episodes,
+                namespace=namespace,
+                temporal_address=temporal_address,
+                kfp_run_id=job_id,
+                mlflow_tracking_uri="http://mlflow-service.kubeflow:5000",
+                mlflow_experiment_name=mlflow_exp_name,
+                mlflow_run_id=mlflow_run_id,
+                minio_endpoint=minio_endpoint,
+                minio_access_key=minio_access_key,
+                minio_secret_key=minio_secret_key,
+                minio_bucket=minio_bucket,
+                worker_image=worker_image,
+                learning_rate=config.get("learning_rate", 0.003),
+                gamma=config.get("gamma", 0.99),
+                entropy_coeff=config.get("entropy_coeff", 0.01),
+                max_grad_norm=config.get("max_grad_norm", 0.5),
+            ).set_retry(num_retries=2, backoff_duration="60s", backoff_factor=2.0)
+            if prev_op is not None:
+                train_op.after(prev_op)
+
+            agg_op = (
+                aggregate_round(
+                    fl_round=round_idx,
+                    num_workers=num_workers,
+                    minio_endpoint=minio_endpoint,
+                    minio_access_key=minio_access_key,
+                    minio_secret_key=minio_secret_key,
+                    minio_bucket=minio_bucket,
+                )
+                .after(train_op)
+                .set_retry(num_retries=2, backoff_duration="60s", backoff_factor=2.0)
+            )
+            prev_op = agg_op
+
+        collect_metrics_csv(
+            fl_rounds=config.get("fl_rounds", 5),
+            num_workers=num_workers,
+            minio_endpoint=minio_endpoint,
+            minio_access_key=minio_access_key,
+            minio_secret_key=minio_secret_key,
+            minio_bucket=minio_bucket,
+        ).after(prev_op)
+    else:
+        # Single component that does everything -- unchanged from before
+        # this phase.
+        train_federated(
+            namespace=namespace,
+            fl_rounds=fl_rounds,
+            num_workers=num_workers,
+            local_episodes=local_episodes,
+            eval_episodes=eval_episodes,
+            job_id=job_id,
+            run_name=run_name,
+            mlflow_run_id=mlflow_run_id,
+            mlflow_exp_name=mlflow_exp_name,
+        ).set_env_variable("MLFLOW_TRACKING_URI", "http://mlflow-service.kubeflow:5000")
 
 
 if __name__ == "__main__":

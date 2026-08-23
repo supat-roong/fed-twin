@@ -1,4 +1,5 @@
 {
+    "worker_launcher": "flower",
     "fl_rounds": 2,
     "num_workers": 2,
     "local_episodes": 2,
