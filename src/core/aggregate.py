@@ -1,14 +1,14 @@
 """
-Plain-mean FedAvg aggregation.
+Plain-mean FedAvg aggregation, with clean separation of math from I/O.
 
 Promoted from fed_twin_visual_single_cluster_pipeline.py's inline aggregate_models
 KFP component — same math (torch.stack + mean, per state_dict key), extracted into
-a pure, dependency-free function so it can be shared between the visual and
-functional pipelines (Phase 3) instead of living only inside one generated file.
+a shared module for reuse between the visual and functional pipelines (Phase 3).
 
-No I/O here deliberately: reading worker weights from MinIO and writing the
-aggregated result back is Phase 3's job (the aggregate_and_evaluate KFP component),
-once there's a real pipeline to drive it. This module only does the math.
+The module maintains clear separation of concerns: `aggregate_state_dicts` is the
+pure, dependency-free math function (works on in-memory state dicts); `run_aggregate_round`
+is the deliberate I/O wrapper that reads training-worker weights from MinIO, delegates
+the averaging to `aggregate_state_dicts`, and writes the aggregated result back to MinIO.
 """
 
 from __future__ import annotations
