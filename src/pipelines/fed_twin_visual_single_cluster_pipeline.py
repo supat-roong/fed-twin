@@ -1,6 +1,13 @@
 """Visual DAG for federated-twin training rounds -- hand-written (the
 generator, generate_fed_twin_visual_pipeline.py, is gone, D3).
 
+The minio branch's worker nodes are unrolled at trace time (a plain Python
+for loop over config's num_workers), not dsl.ParallelFor: the KFP backend
+pinned by infra.env (2.4.0) rejects dsl.Collected fan-in from ParallelFor at
+submission (Argo DAG-sort "invalid dependency", needs backend >= 2.5.0 --
+kubeflow/pipelines#10050), found live at Phase 3c's gate (spec D3, as
+amended).
+
 The flower branch below is frozen at the last-generated constants
 (num_workers=2, fl_rounds=2, local_episodes=2) until Phase 3d deletes it.
 """
@@ -174,16 +181,6 @@ def aggregate_models(
 
 
 @dsl.component(base_image="fed-twin-app:v1", packages_to_install=[])
-def make_worker_ids(num_workers: int) -> list[int]:
-    """Training-twin ids 1..num_workers (rank 0, the eval twin, is dispatched
-    separately after aggregation). Exists so num_workers can be a real
-    runtime pipeline parameter (D3): dsl.ParallelFor needs a runtime list,
-    and KFP cannot compute range() over a dsl parameter at trace time.
-    """
-    return list(range(1, num_workers + 1))
-
-
-@dsl.component(base_image="fed-twin-app:v1", packages_to_install=[])
 def run_worker_via_temporal(
     worker_id: int,
     fl_round: int,
@@ -314,15 +311,12 @@ def aggregate_round(
     minio_access_key: str,
     minio_secret_key: str,
     minio_bucket: str,
-    worker_statuses: list[str],
 ):
     """Mean the round's training-worker weights and write the next round's
-    global checkpoint.
-
-    worker_statuses is the dsl.Collected fan-in from this round's ParallelFor
-    train nodes: KFP v2 cannot .after() a ParallelFor group, so this data
-    dependency is what makes aggregation wait for every train node. The
-    statuses are printed for per-node attribution in this node's logs.
+    global checkpoint. Runs .after() every train node in the round -- a plain
+    task dependency; the pinned KFP backend (2.4.0) rejects dsl.Collected
+    fan-in at submission (needs >= 2.5.0), so worker nodes are statically
+    unrolled at trace time and fanned in here (spec D3, as amended).
     """
     import sys
 
@@ -330,9 +324,6 @@ def aggregate_round(
 
     from aggregate import run_aggregate_round
     from minio import Minio
-
-    for status in worker_statuses:
-        print(status)
 
     minio_client = Minio(
         endpoint=minio_endpoint,
@@ -354,7 +345,6 @@ def visual_fed_twin_pipeline(
     run_name: str = "visual_run_default",
     mlflow_run_id: str = "",
     mlflow_exp_name: str = "Fed-Twin-Visual-Single-Cluster",
-    num_workers: int = config.get("num_workers", 3),
     local_episodes: int = config.get("local_episodes", 10),
     eval_episodes: int = config.get("eval_episodes", 20),
     namespace: str = "kubeflow",
@@ -374,20 +364,23 @@ def visual_fed_twin_pipeline(
         # to the first's running workflows. Same fix as the functional
         # pipelines (Phase 3b final review, commit 37cc58b).
         job_id = uuid.uuid4().hex[:8]
-        # num_workers is a real runtime parameter here (D3): ParallelFor
-        # iterates over make_worker_ids' runtime output, so worker count is
-        # no longer baked in at code-generation time.
-        ids_op = make_worker_ids(num_workers=num_workers)
+        # num_workers is trace-time (config), matching fl_rounds: the KFP
+        # backend pinned by infra.env (2.4.0) rejects dsl.Collected fan-in
+        # from dsl.ParallelFor at submission (Argo DAG-sort "invalid
+        # dependency", needs backend >= 2.5.0 -- kubeflow/pipelines#10050),
+        # so worker nodes are unrolled at trace time and the aggregate node
+        # depends on them via plain .after(*train_ops). Found live at 3c's
+        # gate; see the spec's D3 amendment.
+        num_workers_static = config.get("num_workers", 3)
         prev_op = None
-        # The round count stays trace-time (config, not the dsl parameter) --
-        # KFP cannot range() over a parameter placeholder.
         for r in range(1, config.get("fl_rounds", 3) + 1):
-            with dsl.ParallelFor(items=ids_op.output) as wid:
+            train_ops = []
+            for wid in range(1, num_workers_static + 1):
                 train_op = run_worker_via_temporal(
                     worker_id=wid,
                     fl_round=r - 1,
                     visual_round=r,
-                    num_workers=num_workers,
+                    num_workers=num_workers_static,
                     local_episodes=local_episodes,
                     eval_episodes=eval_episodes,
                     namespace=namespace,
@@ -406,19 +399,20 @@ def visual_fed_twin_pipeline(
                     entropy_coeff=config.get("entropy_coeff", 0.01),
                     max_grad_norm=config.get("max_grad_norm", 0.5),
                 ).set_retry(num_retries=2, backoff_duration="60s", backoff_factor=2.0)
-                train_op.set_display_name(f"train-twin-round-{r}")
+                train_op.set_display_name(f"train-twin-{wid}-round-{r}")
                 if prev_op is not None:
                     train_op.after(prev_op)
+                train_ops.append(train_op)
 
             agg_op = aggregate_round(
                 fl_round=r - 1,
-                num_workers=num_workers,
+                num_workers=num_workers_static,
                 minio_endpoint=minio_endpoint,
                 minio_access_key=minio_access_key,
                 minio_secret_key=minio_secret_key,
                 minio_bucket=minio_bucket,
-                worker_statuses=dsl.Collected(train_op.outputs["Output"]),
             ).set_retry(num_retries=2, backoff_duration="60s", backoff_factor=2.0)
+            agg_op.after(*train_ops)
             agg_op.set_display_name(f"aggregate-round-{r}")
 
             # fl_round = r (one past this round's r-1): downloads
@@ -428,7 +422,7 @@ def visual_fed_twin_pipeline(
                     worker_id=0,
                     fl_round=r,
                     visual_round=r,
-                    num_workers=num_workers,
+                    num_workers=num_workers_static,
                     local_episodes=local_episodes,
                     eval_episodes=eval_episodes,
                     namespace=namespace,

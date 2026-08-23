@@ -12,10 +12,7 @@ import pytest
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from src.orchestration.types import WorkerResult
-from src.pipelines.fed_twin_visual_single_cluster_pipeline import (
-    make_worker_ids,
-    run_worker_via_temporal,
-)
+from src.pipelines.fed_twin_visual_single_cluster_pipeline import run_worker_via_temporal
 
 
 class _FakeHandle:
@@ -78,10 +75,6 @@ def _base_kwargs(metrics) -> dict:
         learning_rate=0.003, gamma=0.99, entropy_coeff=0.01,
         max_grad_norm=0.5, metrics=metrics,
     )
-
-
-def test_make_worker_ids_lists_training_twins():
-    assert make_worker_ids.python_func(num_workers=3) == [1, 2, 3]
 
 
 def test_run_worker_writes_the_nodes_csv_and_builds_the_fleet_spec(tmp_path, monkeypatch):
