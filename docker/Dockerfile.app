@@ -23,12 +23,15 @@ RUN curl -LO "https://dl.k8s.io/release/v1.28.0/bin/linux/$(dpkg --print-archite
 # which keeps the original intent (CPU-only torch, no CUDA payload) while
 # leaving ordinary build dependencies resolvable.
 RUN pip install --no-cache-dir torch --extra-index-url https://download.pytorch.org/whl/cpu && \
-    pip install --no-cache-dir flwr gymnasium numpy kfp==2.15.2 mlflow-skinny boto3
+    pip install --no-cache-dir flwr gymnasium numpy kfp==2.15.2 mlflow-skinny boto3 kubernetes temporalio minio
 
 COPY src/core/engine.py ./
 COPY src/core/client.py ./
 COPY src/core/server.py ./
 COPY src/core/tracking.py ./
+COPY src/core/worker_entrypoint.py ./
+COPY src/core/aggregate.py ./
+COPY src/orchestration/ ./src/orchestration/
 
 # Entrypoint can be overridden by PyTorchJob/Pipeline
 ENTRYPOINT ["python"]
