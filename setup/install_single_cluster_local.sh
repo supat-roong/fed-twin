@@ -26,6 +26,27 @@ kubectl create clusterrolebinding pipeline-runner-extend \
   --clusterrole=cluster-admin --serviceaccount=kubeflow:default \
   --dry-run=client -o yaml | kubectl apply -f -
 
+# The Temporal Helm chart installs the server and waits for the frontend to
+# roll out, but never registers a Temporal namespace. worker_main.py and (in
+# Phase 3b) the pipeline's own Temporal client both use "default" (fed-twin's
+# own k8s/temporal-worker.yaml sets TEMPORAL_NAMESPACE=default), and this
+# chart configuration does not create it automatically -- every
+# client.start_workflow() call would otherwise fail outright with
+# NamespaceNotFound, even though the worker itself connects and polls fine
+# regardless (active-fed hit and fixed this exact gap; same chart, same gap).
+# Registered via the chart's own bundled temporal-admintools deployment.
+# Idempotent: `namespace create` exits non-zero ("already exists") on a
+# second run, so check first via `describe` and only create when absent --
+# re-running setup against an already-provisioned cluster must not fail.
+echo "Registering Temporal namespace 'default'..."
+if kubectl exec -n kubeflow deploy/temporal-admintools -- \
+    temporal operator namespace describe --namespace default >/dev/null 2>&1; then
+  echo "Temporal namespace 'default' already registered."
+else
+  kubectl exec -n kubeflow deploy/temporal-admintools -- \
+    temporal operator namespace create --namespace default
+fi
+
 echo "Applying fed-twin RBAC and the Temporal worker Deployment..."
 kubectl apply -f "${ROOT_DIR}/k8s/rbac.yaml"
 kubectl apply -f "${ROOT_DIR}/k8s/temporal-worker.yaml"
