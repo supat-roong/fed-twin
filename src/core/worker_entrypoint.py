@@ -81,11 +81,16 @@ def run_worker(
         )
         rows.append({"mode": "EVAL", "reward": eval_results["reward"], "loss": 0.0})
     else:
-        new_params, _, fit_results = client.fit(
+        new_params, num_examples, fit_results = client.fit(
             params, {"server_round": fl_round, "local_episodes": local_episodes}
         )
         rows.append(
-            {"mode": "TRAIN", "reward": fit_results["reward"], "loss": fit_results["loss"]}
+            {
+                "mode": "TRAIN",
+                "reward": fit_results["reward"],
+                "loss": fit_results["loss"],
+                "num_examples": num_examples,
+            }
         )
         _, _, eval_results = client.evaluate(
             new_params, {"server_round": fl_round, "eval_episodes": eval_episodes}

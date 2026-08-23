@@ -6,9 +6,7 @@ import sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../src")))
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../src/core")))
 
-import pytest
 import torch
-
 from engine import PolicyNet
 from worker_entrypoint import _download_checkpoint, _upload_state_dict, run_worker
 
@@ -104,6 +102,10 @@ def test_training_worker_uploads_weights_and_both_train_and_eval_rows():
     modes = {row["mode"] for row in payload["rows"]}
     assert modes == {"TRAIN", "EVAL"}
 
+    train_row = next(row for row in payload["rows"] if row["mode"] == "TRAIN")
+    assert isinstance(train_row["num_examples"], int)
+    assert train_row["num_examples"] > 0
+
     # uploaded weights must be a real, loadable PolicyNet state dict
     buf = io.BytesIO(fake.get_bytes(BUCKET, "round_1/workers/worker_1_weights.pt"))
     reloaded = PolicyNet()
@@ -119,3 +121,19 @@ def test_round_zero_training_worker_needs_no_prior_checkpoint():
 
     assert fake.has(BUCKET, "round_0/workers/worker_1_weights.pt")
     assert fake.has(BUCKET, "round_0/workers/worker_1_metrics.json")
+
+
+def test_uploaded_metrics_key_matches_what_wait_for_worker_artifact_polls_for():
+    """Producer (worker_entrypoint.py) and consumer (activities.py's
+    wait_for_worker_artifact) must agree on the exact MinIO key, or a live
+    round hangs for the full POD_WATCH_TIMEOUT_S with no error. This test
+    would catch a one-character drift in either f-string.
+    """
+    fake = FakeMinioClient()
+    _upload_state_dict(fake, BUCKET, "round_0/global.pt", PolicyNet().state_dict())
+
+    run_worker(fake, BUCKET, rank=1, fl_round=1, local_episodes=1, eval_episodes=1)
+
+    # Exact key wait_for_worker_artifact (src/orchestration/activities.py) polls for.
+    expected_key = f"round_{1}/workers/worker_{1}_metrics.json"
+    assert fake.has(BUCKET, expected_key)
