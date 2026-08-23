@@ -13,6 +13,7 @@ once there's a real pipeline to drive it. This module only does the math.
 
 from __future__ import annotations
 
+import io
 import torch
 
 
@@ -30,3 +31,35 @@ def aggregate_state_dicts(state_dicts: list[dict]) -> dict:
         stacked = torch.stack([sd[key].float() for sd in state_dicts])
         avg_state_dict[key] = torch.mean(stacked, dim=0)
     return avg_state_dict
+
+
+def run_aggregate_round(minio_client, minio_bucket: str, fl_round: int, num_workers: int) -> None:
+    """Mean this round's training-worker weights and write the next round's
+    global checkpoint.
+
+    Reads ranks 1..num_workers-1 (rank 0 is always the eval-only twin, D5 --
+    it never uploads weights, so it's never read here). Delegates the actual
+    math to aggregate_state_dicts, which already raises ValueError if there
+    is nothing to average (e.g. num_workers == 1: no training workers at
+    all).
+    """
+    state_dicts = []
+    for rank in range(1, num_workers):
+        response = minio_client.get_object(
+            minio_bucket, f"round_{fl_round}/workers/worker_{rank}_weights.pt"
+        )
+        try:
+            buf = io.BytesIO(response.read())
+        finally:
+            response.close()
+            response.release_conn()
+        state_dicts.append(torch.load(buf))
+
+    avg_state_dict = aggregate_state_dicts(state_dicts)
+
+    out_buf = io.BytesIO()
+    torch.save(avg_state_dict, out_buf)
+    data = out_buf.getvalue()
+    minio_client.put_object(
+        minio_bucket, f"round_{fl_round}/global.pt", io.BytesIO(data), length=len(data)
+    )
