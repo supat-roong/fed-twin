@@ -602,3 +602,46 @@ def test_rbac_grants_batch_jobs_access():
         f"k8s/rbac.yaml's ClusterRole must grant {required} on batch/jobs; "
         f"got {granted_verbs}"
     )
+
+
+def test_temporal_worker_manifest_matches_the_rbac_clusterrole():
+    """k8s/temporal-worker.yaml's ClusterRoleBinding must point at the ClusterRole
+    k8s/rbac.yaml actually defines, and the Deployment must not be named literally
+    "temporal-worker" -- that collides with the Temporal Helm chart's own internal
+    system-worker Deployment in the same namespace, which active-fed hit for real.
+    """
+    import pathlib
+
+    import yaml as _yaml
+
+    root = pathlib.Path(__file__).resolve().parent.parent
+    rbac_docs = list(_yaml.safe_load_all((root / "k8s" / "rbac.yaml").read_text()))
+    worker_docs = list(
+        _yaml.safe_load_all((root / "k8s" / "temporal-worker.yaml").read_text())
+    )
+
+    role_names = {
+        d["metadata"]["name"] for d in rbac_docs if d and d.get("kind") == "ClusterRole"
+    }
+    assert role_names, "no ClusterRole in k8s/rbac.yaml"
+
+    bindings = [
+        d for d in worker_docs if d and d.get("kind") == "ClusterRoleBinding"
+    ]
+    assert bindings, "no ClusterRoleBinding in k8s/temporal-worker.yaml"
+    for binding in bindings:
+        role_ref = binding["roleRef"]["name"]
+        assert role_ref in role_names, (
+            f"k8s/temporal-worker.yaml's ClusterRoleBinding references ClusterRole "
+            f"{role_ref!r}, but k8s/rbac.yaml only defines {role_names}"
+        )
+
+    deployments = [d for d in worker_docs if d and d.get("kind") == "Deployment"]
+    assert deployments, "no Deployment in k8s/temporal-worker.yaml"
+    for deployment in deployments:
+        name = deployment["metadata"]["name"]
+        assert name != "temporal-worker", (
+            "Deployment must not be named literally 'temporal-worker' -- that "
+            "collides with the Temporal Helm chart's own internal system-worker "
+            "Deployment in the kubeflow namespace"
+        )

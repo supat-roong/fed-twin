@@ -1,10 +1,3 @@
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: pipeline-runner
-  namespace: kubeflow
-
----
 # Allows pipeline pods (and the Temporal worker, via Task 2's ClusterRoleBinding) to
 # manage worker Jobs and read their pods/logs.
 apiVersion: rbac.authorization.k8s.io/v1
@@ -34,6 +27,12 @@ kind: ClusterRoleBinding
 metadata:
   name: fed-twin-pipeline-binding
 subjects:
+  # kubeflow's pipeline-runner ServiceAccount is created and owned by KFP's own
+  # manifests -- referenced here as a binding subject only, never declared/applied by
+  # this file. Declaring it here would take over ownership of a KFP-managed object
+  # (confirmed live: `kubectl apply` printed "configured", not "created"). active-fed's
+  # own rbac.yaml follows this identical by-reference-only pattern for its second
+  # binding subject, also named pipeline-runner in the kubeflow namespace.
   - kind: ServiceAccount
     name: pipeline-runner
     namespace: kubeflow
