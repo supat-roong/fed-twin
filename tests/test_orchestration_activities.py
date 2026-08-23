@@ -101,6 +101,25 @@ def test_manifest_carries_minio_and_mlflow_env():
     assert env["MLFLOW_TRACKING_URI"] == "http://mlflow:5000"
 
 
+def test_manifest_carries_mlflow_run_id_and_hyperparameters():
+    spec = _spec(
+        mlflow_run_id="run-42",
+        learning_rate=0.01,
+        gamma=0.9,
+        entropy_coeff=0.02,
+        max_grad_norm=1.0,
+    )
+    env = {
+        e["name"]: e["value"]
+        for e in build_job_manifest(spec)["spec"]["template"]["spec"]["containers"][0]["env"]
+    }
+    assert env["MLFLOW_RUN_ID"] == "run-42"
+    assert env["LEARNING_RATE"] == "0.01"
+    assert env["GAMMA"] == "0.9"
+    assert env["ENTROPY_COEFF"] == "0.02"
+    assert env["MAX_GRAD_NORM"] == "1.0"
+
+
 def test_manifest_passes_round_and_episodes_as_env():
     # fed-twin's worker entrypoint takes no CLI arguments -- everything comes
     # from environment variables (unlike active-fed's --fl-round/--local-

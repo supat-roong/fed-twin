@@ -127,6 +127,11 @@ def build_job_manifest(spec: WorkerSpec) -> dict:
                                     "name": "MLFLOW_EXPERIMENT_NAME",
                                     "value": spec.mlflow_experiment_name,
                                 },
+                                {"name": "MLFLOW_RUN_ID", "value": spec.mlflow_run_id},
+                                {"name": "LEARNING_RATE", "value": str(spec.learning_rate)},
+                                {"name": "GAMMA", "value": str(spec.gamma)},
+                                {"name": "ENTROPY_COEFF", "value": str(spec.entropy_coeff)},
+                                {"name": "MAX_GRAD_NORM", "value": str(spec.max_grad_norm)},
                             ],
                         }
                     ],
