@@ -26,6 +26,10 @@ kubectl create clusterrolebinding pipeline-runner-extend \
   --clusterrole=cluster-admin --serviceaccount=kubeflow:default \
   --dry-run=client -o yaml | kubectl apply -f -
 
+echo "Applying fed-twin RBAC and the Temporal worker Deployment..."
+kubectl apply -f "${ROOT_DIR}/k8s/rbac.yaml"
+kubectl apply -f "${ROOT_DIR}/k8s/temporal-worker.yaml"
+
 echo "Exposing KFP MinIO..."
 fed_expose_nodeport minio-service kubeflow \
   "[{\"name\":\"api\",\"port\":9000,\"targetPort\":9000,\"nodePort\":${FED_NODEPORT_MINIO_API}},{\"name\":\"console\",\"port\":9001,\"targetPort\":9001,\"nodePort\":${FED_NODEPORT_MINIO_CONSOLE}}]"

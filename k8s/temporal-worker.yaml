@@ -1,0 +1,81 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: temporal-worker
+  namespace: kubeflow
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: fed-twin-temporal-worker-binding
+subjects:
+  - kind: ServiceAccount
+    name: temporal-worker
+    namespace: kubeflow
+roleRef:
+  kind: ClusterRole
+  name: fed-twin-pipeline-role
+  apiGroup: rbac.authorization.k8s.io
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  # Not "temporal-worker": the Temporal Helm chart uses that name for its own internal
+  # system-workflow worker role (server-side frontend/history/matching/worker), deployed
+  # into this same namespace. Deployment.spec.selector is immutable, so applying this
+  # manifest under the chart's name would fail outright trying to overwrite an object with
+  # a mismatched selector — active-fed hit exactly this and renamed for the same reason.
+  name: fed-twin-temporal-worker
+  namespace: kubeflow
+  labels:
+    app: fed-twin-temporal-worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fed-twin-temporal-worker
+  template:
+    metadata:
+      labels:
+        app: fed-twin-temporal-worker
+    spec:
+      serviceAccountName: temporal-worker
+      # The Karmada apiserver kubeconfig, mounted so this worker can reach the Karmada
+      # control plane and dispatch topology='multi' Jobs to member clusters in Phase 4
+      # (see src/orchestration/dispatch.py's _karmada_clients, which reads
+      # FED_KARMADA_CONFIG below as a file path). `optional: true` is deliberate: the
+      # single-cluster topology never creates this Secret, and this one Deployment
+      # manifest is meant to be shared by both topologies without needing a Phase 4 edit.
+      # Without `optional: true`, a missing Secret would leave this pod stuck in
+      # ContainerCreating forever.
+      volumes:
+        - name: karmada-kubeconfig
+          secret:
+            secretName: karmada-kubeconfig
+            optional: true
+      containers:
+        - name: worker
+          image: fed-twin-app:v1
+          imagePullPolicy: IfNotPresent
+          command: ["python", "-m", "src.orchestration.worker_main"]
+          env:
+            - name: TEMPORAL_ADDRESS
+              value: "temporal-frontend.kubeflow.svc.cluster.local:7233"
+            - name: TEMPORAL_NAMESPACE
+              value: "default"
+            # Read by dispatch.py's _karmada_clients only when a worker's topology is
+            # 'multi'; unused (and harmless) for topology='single'.
+            - name: FED_KARMADA_CONFIG
+              value: "/etc/karmada/karmada-apiserver.config"
+          volumeMounts:
+            - name: karmada-kubeconfig
+              mountPath: /etc/karmada
+              readOnly: true
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
