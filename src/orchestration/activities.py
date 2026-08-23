@@ -112,7 +112,7 @@ def build_job_manifest(spec: WorkerSpec) -> dict:
                             "name": "worker",
                             "image": spec.worker_image,
                             "imagePullPolicy": "IfNotPresent",
-                            "command": ["python", "-m", "src.core.worker_entrypoint"],
+                            "command": ["python", "worker_entrypoint.py"],
                             "env": [
                                 {"name": "RANK", "value": str(spec.worker_id)},
                                 {"name": "FL_ROUND", "value": str(spec.fl_round)},

@@ -139,7 +139,7 @@ def test_manifest_targets_fed_twins_own_worker_entrypoint():
     # "src.agent.train_worker"] here) would pass the rest of this suite
     # undetected.
     c = build_job_manifest(_spec())["spec"]["template"]["spec"]["containers"][0]
-    assert c["command"] == ["python", "-m", "src.core.worker_entrypoint"]
+    assert c["command"] == ["python", "worker_entrypoint.py"]
     assert "args" not in c  # fed-twin's entrypoint takes no CLI args
 
 
