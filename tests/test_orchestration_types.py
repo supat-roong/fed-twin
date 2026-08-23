@@ -25,6 +25,7 @@ def _round_spec(**overrides):
         minio_bucket="bucket",
         mlflow_tracking_uri="http://mlflow:5000",
         mlflow_experiment_name="exp",
+        mlflow_run_id="run-1",
         kfp_run_id="run-1",
     )
     base.update(overrides)
@@ -61,7 +62,7 @@ def test_worker_spec_defaults_topology_to_single_with_no_member_cluster():
         namespace="ns", worker_image="img:v1", minio_endpoint="m:9000",
         minio_access_key="a", minio_secret_key="b", minio_bucket="bkt",
         mlflow_tracking_uri="http://mlflow:5000", mlflow_experiment_name="exp",
-        kfp_run_id="run-1",
+        mlflow_run_id="run-1", kfp_run_id="run-1",
     )
     assert spec.topology == "single"
     assert spec.member_cluster == ""
@@ -73,7 +74,7 @@ def test_worker_spec_topology_and_member_cluster_are_frozen():
         namespace="ns", worker_image="img:v1", minio_endpoint="m:9000",
         minio_access_key="a", minio_secret_key="b", minio_bucket="bkt",
         mlflow_tracking_uri="http://mlflow:5000", mlflow_experiment_name="exp",
-        kfp_run_id="run-1",
+        mlflow_run_id="run-1", kfp_run_id="run-1",
     )
     with pytest.raises(dataclasses.FrozenInstanceError):
         spec.member_cluster = "member1"  # type: ignore[misc]
@@ -108,7 +109,7 @@ def test_worker_spec_defaults_nodeports_to_zero():
         namespace="ns", worker_image="img:v1", minio_endpoint="m:9000",
         minio_access_key="a", minio_secret_key="b", minio_bucket="bkt",
         mlflow_tracking_uri="http://mlflow:5000", mlflow_experiment_name="exp",
-        kfp_run_id="run-1",
+        mlflow_run_id="run-1", kfp_run_id="run-1",
     )
     assert spec.minio_nodeport == 0
     assert spec.mlflow_nodeport == 0
@@ -252,3 +253,26 @@ def test_worker_spec_carries_eval_episodes_distinct_from_local_episodes():
     spec = _round_spec(local_episodes=10, eval_episodes=3).worker_spec(0)
     assert spec.local_episodes == 10
     assert spec.eval_episodes == 3
+
+
+def test_worker_spec_carries_mlflow_run_id_and_hyperparameters():
+    spec = _round_spec(
+        mlflow_run_id="run-42",
+        learning_rate=0.01,
+        gamma=0.9,
+        entropy_coeff=0.02,
+        max_grad_norm=1.0,
+    ).worker_spec(0)
+    assert spec.mlflow_run_id == "run-42"
+    assert spec.learning_rate == 0.01
+    assert spec.gamma == 0.9
+    assert spec.entropy_coeff == 0.02
+    assert spec.max_grad_norm == 1.0
+
+
+def test_worker_spec_hyperparameters_default_to_todays_hardcoded_values():
+    spec = _round_spec().worker_spec(0)
+    assert spec.learning_rate == 0.003
+    assert spec.gamma == 0.99
+    assert spec.entropy_coeff == 0.01
+    assert spec.max_grad_norm == 0.5

@@ -47,6 +47,7 @@ class WorkerSpec:
     minio_bucket: str
     mlflow_tracking_uri: str
     mlflow_experiment_name: str
+    mlflow_run_id: str
     kfp_run_id: str
     # Which deployment topology this worker's Job dispatches into. "single"
     # (default) is the local-cluster case; "multi" means the Job is
@@ -71,6 +72,14 @@ class WorkerSpec:
     # spec.
     minio_nodeport: int = 0
     mlflow_nodeport: int = 0
+    # RL hyperparameters. Defaults match what fed_twin_single_cluster_pipeline.py's
+    # Jinja2 template.render(...) call hardcodes today (learning_rate=0.003,
+    # gamma=0.99, entropy_coeff=0.01, max_grad_norm=0.5) — behavior is unchanged
+    # until Phase 3 threads a different value through from config.
+    learning_rate: float = 0.003
+    gamma: float = 0.99
+    entropy_coeff: float = 0.01
+    max_grad_norm: float = 0.5
 
 
 @dataclasses.dataclass(frozen=True)
@@ -90,6 +99,7 @@ class RoundSpec:
     minio_bucket: str
     mlflow_tracking_uri: str
     mlflow_experiment_name: str
+    mlflow_run_id: str
     kfp_run_id: str
     topology: str = "single"
     member_cluster: str = ""
@@ -101,6 +111,11 @@ class RoundSpec:
     member_prefix: str = ""
     minio_nodeport: int = 0
     mlflow_nodeport: int = 0
+    # see WorkerSpec
+    learning_rate: float = 0.003
+    gamma: float = 0.99
+    entropy_coeff: float = 0.01
+    max_grad_norm: float = 0.5
     # KFP's own run id, as used in its UI at /#/runs/details/<id>. Deliberately
     # separate from kfp_run_id above, which holds run_uid — a short fragment
     # job_name_for builds Kubernetes Job names from ("ftwn-<run_uid>-r0-w0"),
@@ -128,11 +143,16 @@ class RoundSpec:
             minio_bucket=self.minio_bucket,
             mlflow_tracking_uri=self.mlflow_tracking_uri,
             mlflow_experiment_name=self.mlflow_experiment_name,
+            mlflow_run_id=self.mlflow_run_id,
             kfp_run_id=self.kfp_run_id,
             topology=self.topology,
             member_cluster=member_cluster,
             minio_nodeport=self.minio_nodeport,
             mlflow_nodeport=self.mlflow_nodeport,
+            learning_rate=self.learning_rate,
+            gamma=self.gamma,
+            entropy_coeff=self.entropy_coeff,
+            max_grad_norm=self.max_grad_norm,
         )
 
     def _member_cluster_for(self, worker_id: int) -> str:

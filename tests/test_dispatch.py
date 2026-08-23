@@ -28,6 +28,7 @@ def _spec(**overrides) -> WorkerSpec:
         minio_endpoint="minio-service:9000", minio_access_key="ak",
         minio_secret_key="sk", minio_bucket="bucket",
         mlflow_tracking_uri="http://mlflow:5000", mlflow_experiment_name="exp",
+        mlflow_run_id="run-1",
         kfp_run_id="abcdef1234567890",
         topology="multi", member_cluster="active-fed-member1",
     )

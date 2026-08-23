@@ -24,6 +24,7 @@ def _round_spec(num_workers=3, min_workers=2, kfp_backend_run_id="") -> RoundSpe
         namespace="ns", worker_image="img:v1", minio_endpoint="m:9000",
         minio_access_key="a", minio_secret_key="b", minio_bucket="bkt",
         mlflow_tracking_uri="http://mlflow:5000", mlflow_experiment_name="exp",
+        mlflow_run_id="run-1",
         kfp_run_id="abcdef1234",
         kfp_backend_run_id=kfp_backend_run_id,
     )
@@ -36,6 +37,7 @@ def _worker_spec(worker_id=0) -> WorkerSpec:
         namespace="ns", worker_image="img:v1", minio_endpoint="m:9000",
         minio_access_key="a", minio_secret_key="b", minio_bucket="bkt",
         mlflow_tracking_uri="http://mlflow:5000", mlflow_experiment_name="exp",
+        mlflow_run_id="run-1",
         kfp_run_id="abcdef1234",
     )
 
