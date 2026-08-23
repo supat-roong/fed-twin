@@ -14,4 +14,3 @@ plots/
 .ruff_cache
 .venv/
 mlflow.db
-src/pipelines/fed_twin_visual_single_cluster_pipeline.py

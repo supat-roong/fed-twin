@@ -78,10 +78,6 @@ done
 # Run Logic
 if [ "$PIPELINE_ARG" == "all_single_cluster" ]; then
     echo "🔁 Running ALL Single Cluster pipelines..."
-    # Ensure generated pipelines are ready and up-to-date with config
-    echo "⚠️ Generating/Updating fed_twin_visual_single_cluster_pipeline.py..."
-    uv run python src/pipelines/generate_fed_twin_visual_pipeline.py
-
     # Order: Single Twin -> Single Twin Visual -> Fed Twin -> Fed Twin Visual
     for pt in "single_twin_single_cluster" "single_twin_visual_single_cluster" "fed_twin_single_cluster" "fed_twin_visual_single_cluster"; do
         run_pipeline "$pt"
@@ -97,12 +93,6 @@ elif [ "$PIPELINE_ARG" == "all" ]; then
     echo "👉 Please use 'all_single_cluster' or 'all_multi_cluster' instead."
     exit 1
 else
-    # Auto-generate if visual
-    if [ "$PIPELINE_ARG" == "fed_twin_visual_single_cluster" ]; then
-        echo "⚠️ Generating/Updating fed_twin_visual_single_cluster_pipeline.py..."
-        uv run python src/pipelines/generate_fed_twin_visual_pipeline.py
-    fi
-
     run_pipeline "$PIPELINE_ARG"
 fi
 
