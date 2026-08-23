@@ -548,12 +548,6 @@ async def test_karmada_dispatcher_tolerates_an_existing_namespace():
     assert core.created == [], "an already-present namespace must not be recreated"
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="fed-twin's k8s/rbac.yaml RBAC swap (nodes get/list for topology='multi') "
-    "is Phase 3 work per docs/superpowers/specs/2026-08-23-fed-twin-temporal-retrofit-design.md §3.5 — "
-    "not yet applicable while this module is unwired (Phase 1)."
-)
 def test_rbac_grants_the_node_access_the_multi_endpoint_rewrite_needs():
     """k8s/rbac.yaml must allow listing nodes, or topology='multi' cannot dispatch.
 
@@ -581,4 +575,30 @@ def test_rbac_grants_the_node_access_the_multi_endpoint_rewrite_needs():
     assert granted, (
         "no ClusterRole in k8s/rbac.yaml grants list on core/nodes, so "
         "_resolve_host_node_ip will 403 and every topology='multi' dispatch fails"
+    )
+
+
+def test_rbac_grants_batch_jobs_access():
+    """k8s/rbac.yaml must allow full CRUD on batch/jobs, or launch_and_watch_pod
+    (activities.py) cannot create, watch, or delete the worker Jobs it launches.
+    """
+    import pathlib
+
+    import yaml as _yaml
+
+    root = pathlib.Path(__file__).resolve().parent.parent
+    docs = list(_yaml.safe_load_all((root / "k8s" / "rbac.yaml").read_text()))
+    roles = [d for d in docs if d and d.get("kind") == "ClusterRole"]
+    assert roles, "no ClusterRole in k8s/rbac.yaml"
+
+    granted_verbs = set()
+    for role in roles:
+        for rule in role.get("rules", []):
+            if "batch" in rule.get("apiGroups", []) and "jobs" in rule.get("resources", []):
+                granted_verbs.update(rule.get("verbs", []))
+
+    required = {"get", "list", "watch", "create", "delete"}
+    assert required.issubset(granted_verbs), (
+        f"k8s/rbac.yaml's ClusterRole must grant {required} on batch/jobs; "
+        f"got {granted_verbs}"
     )

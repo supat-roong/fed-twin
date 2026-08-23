@@ -1,28 +1,43 @@
 apiVersion: v1
-kind: Namespace
+kind: ServiceAccount
 metadata:
-  name: digital-twin-fleet
+  name: pipeline-runner
+  namespace: kubeflow
+
 ---
+# Allows pipeline pods (and the Temporal worker, via Task 2's ClusterRoleBinding) to
+# manage worker Jobs and read their pods/logs.
 apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
+kind: ClusterRole
 metadata:
-  name: twin-operator
-  namespace: digital-twin-fleet
+  name: fed-twin-pipeline-role
 rules:
-- apiGroups: ["kubeflow.org"]
-  resources: ["pytorchjobs"]
-  verbs: ["get", "list", "watch", "create", "delete"]
+  - apiGroups: ["batch"]
+    resources: ["jobs", "jobs/status"]
+    verbs: ["get", "list", "watch", "create", "delete"]
+  - apiGroups: [""]
+    resources: ["pods", "pods/log", "services", "endpoints"]
+    verbs: ["get", "list", "watch"]
+  # nodes: required by _resolve_host_node_ip (src/orchestration/activities.py) under
+  # topology='multi' (Phase 4). Worker Jobs on member clusters cannot resolve the host's
+  # *.svc.cluster.local names, so their MinIO/MLflow endpoints are rewritten to
+  # <host-node-InternalIP>:<NodePort>, read from the host cluster's node list at dispatch
+  # time rather than configured (a kind node's Docker IP changes across a host restart).
+  # Read-only, and unused by topology='single'.
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list"]
+
 ---
 apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
+kind: ClusterRoleBinding
 metadata:
-  name: twin-operator-binding
-  namespace: digital-twin-fleet
+  name: fed-twin-pipeline-binding
 subjects:
-- kind: ServiceAccount
-  name: default
-  namespace: digital-twin-fleet
+  - kind: ServiceAccount
+    name: pipeline-runner
+    namespace: kubeflow
 roleRef:
-  kind: Role
-  name: twin-operator
+  kind: ClusterRole
+  name: fed-twin-pipeline-role
   apiGroup: rbac.authorization.k8s.io
