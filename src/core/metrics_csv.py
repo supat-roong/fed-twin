@@ -36,5 +36,9 @@ def collect_metrics_rows(minio_client, minio_bucket: str, fl_rounds: int, num_wo
                 response.release_conn()
             twin_id = payload["twin_id"]
             for row in payload["rows"]:
-                rows.append([fl_round, twin_id, row["mode"], row["reward"], row["loss"]])
+                # fl_round is the 0-based MinIO key index; the CSV's round
+                # column is 1-based everywhere else in this repo (Flower's
+                # server_round, both visual pipelines), so shift here -- at
+                # the presentation boundary, never in the storage keys.
+                rows.append([fl_round + 1, twin_id, row["mode"], row["reward"], row["loss"]])
     return rows

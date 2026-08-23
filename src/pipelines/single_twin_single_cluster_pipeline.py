@@ -449,9 +449,8 @@ def aggregate_round(
 
     sys.path.insert(0, "/app")
 
-    from minio import Minio
-
     from aggregate import run_aggregate_round
+    from minio import Minio
 
     minio_client = Minio(
         endpoint=minio_endpoint,
@@ -485,9 +484,8 @@ def collect_metrics_csv(
 
     sys.path.insert(0, "/app")
 
-    from minio import Minio
-
     from metrics_csv import collect_metrics_rows
+    from minio import Minio
 
     minio_client = Minio(
         endpoint=minio_endpoint,
@@ -513,6 +511,9 @@ def collect_metrics_csv(
 )
 def single_twin_single_cluster_pipeline(
     namespace: str = "kubeflow",
+    # NOTE: consumed only by the flower branch. Under worker_launcher=minio
+    # the round count is frozen at trace time from config (see the loop
+    # below) and this runtime parameter is accepted but ignored.
     fl_rounds: int = config.get("fl_rounds", 10),
     local_episodes: int = config.get("local_episodes", 10),
     eval_episodes: int = config.get("eval_episodes", 20),
@@ -526,11 +527,18 @@ def single_twin_single_cluster_pipeline(
     minio_bucket: str = "mlflow-artifacts",
     worker_image: str = "fed-twin-app:v1",
 ):
-    import time
-
-    job_id = str(int(time.time()))
-
     if WORKER_LAUNCHER == "minio":
+        import uuid
+
+        # The 8 chars consumed by workflow ids and Job names need real
+        # entropy: a truncated epoch timestamp changes only every 100s, and
+        # USE_EXISTING would silently attach a second same-window submission
+        # to the first's running round. uuid hex is lowercase alphanumeric,
+        # satisfying the Job-name fragment rule. Computed at trace time, so
+        # resubmitting one compiled YAML (KFP UI clone / recurring run)
+        # reuses the id -- recompile per run, as run_pipeline.sh already does.
+        job_id = uuid.uuid4().hex[:8]
+
         # 1 training twin; the components derive the fleet as num_workers + 1
         # (rank 0 is the eval twin), so this yields 2 Jobs per round --
         # matching today's flower-path template's hardcoded "replicas: 2".
@@ -586,6 +594,10 @@ def single_twin_single_cluster_pipeline(
             minio_bucket=minio_bucket,
         ).after(prev_op)
     else:
+        import time
+
+        job_id = str(int(time.time()))
+
         train_single_twin(
             namespace=namespace,
             fl_rounds=fl_rounds,

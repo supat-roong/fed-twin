@@ -65,9 +65,9 @@ def test_collect_metrics_rows_flattens_every_worker_in_one_round():
     rows = collect_metrics_rows(fake, BUCKET, fl_rounds=1, num_workers=2)
 
     assert rows == [
-        [0, "eval-twin-global", "EVAL", 1.0, 0.0],
-        [0, "train-twin-1", "TRAIN", 2.0, 0.5],
-        [0, "train-twin-1", "EVAL", 2.5, 0.0],
+        [1, "eval-twin-global", "EVAL", 1.0, 0.0],
+        [1, "train-twin-1", "TRAIN", 2.0, 0.5],
+        [1, "train-twin-1", "EVAL", 2.5, 0.0],
     ]
 
 
@@ -81,7 +81,7 @@ def test_collect_metrics_rows_spans_multiple_rounds_in_order():
 
     rows = collect_metrics_rows(fake, BUCKET, fl_rounds=2, num_workers=1)
 
-    assert [r[0] for r in rows] == [0, 1]
+    assert [r[0] for r in rows] == [1, 2]
 
 
 def test_collect_metrics_rows_returns_empty_list_for_zero_rounds():

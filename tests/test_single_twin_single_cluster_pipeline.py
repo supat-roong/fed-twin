@@ -11,9 +11,14 @@ from temporalio.exceptions import ApplicationError
 # there is no root conftest.py, pyproject pythonpath setting, or editable
 # install that puts `src` on sys.path otherwise).
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../src/core")))
 
 from src.orchestration.types import RoundReport, WorkerResult, WorkerStatus
-from src.pipelines.single_twin_single_cluster_pipeline import train_workers
+from src.pipelines.single_twin_single_cluster_pipeline import (
+    aggregate_round,
+    collect_metrics_csv,
+    train_workers,
+)
 
 
 class _FakeHandle:
@@ -129,3 +134,39 @@ def test_fleet_includes_the_eval_twin_beyond_num_workers(tmp_path, monkeypatch):
     spec = client.started_specs[0]
     assert spec.num_workers == 3, "fleet must be num_workers(2) + 1 eval twin"
     assert spec.min_workers == 3, "quorum must cover the whole fleet"
+
+
+def test_aggregate_and_collect_components_add_the_eval_twin(tmp_path, monkeypatch):
+    """aggregate_round and collect_metrics_csv must derive the fleet as
+    num_workers + 1, same as train_workers -- this exact +1 regressed once
+    (the mid-execution fleet ruling), so all three components are guarded.
+    """
+    import aggregate as aggregate_module
+    import metrics_csv as metrics_csv_module
+
+    seen = {}
+
+    def fake_run_aggregate_round(minio_client, minio_bucket, fl_round, num_workers):
+        seen["aggregate"] = num_workers
+
+    def fake_collect_metrics_rows(minio_client, minio_bucket, fl_rounds, num_workers):
+        seen["collect"] = num_workers
+        return []
+
+    monkeypatch.setattr(aggregate_module, "run_aggregate_round", fake_run_aggregate_round)
+    monkeypatch.setattr(metrics_csv_module, "collect_metrics_rows", fake_collect_metrics_rows)
+
+    aggregate_round.python_func(
+        fl_round=0, num_workers=1, minio_endpoint="minio:9000",
+        minio_access_key="minio", minio_secret_key="minio123",
+        minio_bucket="mlflow-artifacts",
+    )
+    collect_metrics_csv.python_func(
+        fl_rounds=2, num_workers=1, minio_endpoint="minio:9000",
+        minio_access_key="minio", minio_secret_key="minio123",
+        minio_bucket="mlflow-artifacts",
+        metrics=SimpleNamespace(path=str(tmp_path / "metrics.csv")),
+    )
+
+    assert seen["aggregate"] == 2, "fleet must be num_workers(1) + 1 eval twin"
+    assert seen["collect"] == 2, "fleet must be num_workers(1) + 1 eval twin"
