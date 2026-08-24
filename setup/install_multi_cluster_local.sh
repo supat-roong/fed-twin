@@ -54,6 +54,56 @@ kubectl create clusterrolebinding pipeline-runner-extend \
   --clusterrole=cluster-admin --serviceaccount=kubeflow:default \
   --dry-run=client -o yaml | kubectl apply -f -
 
+echo "Registering Temporal namespace 'default'..."
+if kubectl exec -n "${FED_NAMESPACE}" deploy/temporal-admintools -- \
+    temporal operator namespace describe --namespace default >/dev/null 2>&1; then
+  echo "Temporal namespace 'default' already registered."
+else
+  kubectl exec -n "${FED_NAMESPACE}" deploy/temporal-admintools -- \
+    temporal operator namespace create --namespace default
+fi
+
+echo "Applying fed-twin RBAC..."
+kubectl apply -f "${ROOT_DIR}/k8s/rbac.yaml"
+
+# The kubeconfig fed-infra writes points at https://127.0.0.1:<nodeport>,
+# which is right for this machine (kind maps that port to the host) but
+# meaningless inside a pod, where 127.0.0.1 is the pod's own loopback. The
+# Temporal worker runs as a pod on the host cluster, so handing it that file
+# verbatim would make every topology='multi' dispatch fail to connect.
+# Rewrite the server to the Karmada apiserver's in-cluster Service DNS, whose
+# port is read from the live Service rather than hardcoded so this cannot
+# drift from whatever karmadactl actually created (the deleted legacy
+# pipelines hardcoded :5443 here -- exactly the smell this replaces).
+echo "Rewriting the Karmada kubeconfig for in-cluster use..."
+KARMADA_SVC_PORT=$(kubectl -n karmada-system get svc karmada-apiserver \
+  -o jsonpath='{.spec.ports[0].port}') || KARMADA_SVC_PORT=""
+if [ -z "$KARMADA_SVC_PORT" ]; then
+  echo "ERROR: could not read the karmada-apiserver Service port in karmada-system." >&2
+  echo "       Is the Karmada control plane installed on this cluster?" >&2
+  exit 1
+fi
+
+KARMADA_INCLUSTER_CONFIG=$(mktemp)
+trap 'rm -f "$KARMADA_INCLUSTER_CONFIG"' EXIT
+cp "${FED_KARMADA_CONFIG}" "$KARMADA_INCLUSTER_CONFIG"
+KARMADA_CLUSTER_NAME=$(kubectl --kubeconfig="$KARMADA_INCLUSTER_CONFIG" \
+  config view -o jsonpath='{.clusters[0].name}')
+kubectl --kubeconfig="$KARMADA_INCLUSTER_CONFIG" config set-cluster \
+  "$KARMADA_CLUSTER_NAME" \
+  --server="https://karmada-apiserver.karmada-system.svc.cluster.local:${KARMADA_SVC_PORT}"
+
+# Idempotent: `create secret --dry-run=client -o yaml | apply` re-running
+# this against an already-provisioned cluster updates the Secret in place
+# instead of failing (a plain `kubectl create secret` 409s on a second run).
+echo "Creating/updating the Karmada kubeconfig Secret for the Temporal worker..."
+kubectl create secret generic karmada-kubeconfig -n "${FED_NAMESPACE}" \
+  --from-file=karmada-apiserver.config="$KARMADA_INCLUSTER_CONFIG" \
+  --dry-run=client -o yaml | kubectl apply -f -
+
+echo "Applying the Temporal worker Deployment..."
+kubectl apply -f "${ROOT_DIR}/k8s/temporal-worker.yaml"
+
 echo "Exposing KFP MinIO..."
 fed_expose_nodeport minio-service kubeflow \
   "[{\"name\":\"api\",\"port\":9000,\"targetPort\":9000,\"nodePort\":${FED_NODEPORT_MINIO_API}},{\"name\":\"console\",\"port\":9001,\"targetPort\":9001,\"nodePort\":${FED_NODEPORT_MINIO_CONSOLE}}]"
