@@ -2,7 +2,7 @@
 One-shot Job body for one FL round's worker: downloads the current global
 checkpoint, trains (or, for the eval twin, only evaluates), and uploads its
 weights/metrics to MinIO. Replaces client.py's Flower start_numpy_client()
-entrypoint — client.py's TwinClient class itself is reused completely
+entrypoint — twin.py's TwinClient class itself is reused completely
 unchanged, only how it's invoked changes.
 
 Twin identity is computed from RANK, not read from an env var: RANK==0 is
@@ -11,8 +11,8 @@ twin ("train-twin-{RANK}"). This mirrors today's PyTorchJob hostname-suffix
 convention exactly, without needing to parse a hostname at all.
 
 LEARNING_RATE/GAMMA/ENTROPY_COEFF/MAX_GRAD_NORM are deliberately not read
-anywhere in this file: client.py's own module-level os.getenv(...) constants
-already pick them up the moment "from client import TwinClient" executes,
+anywhere in this file: twin.py's own module-level os.getenv(...) constants
+already pick them up the moment "from twin import TwinClient" executes,
 as long as they're already in the process environment (build_job_manifest
 guarantees this in production).
 """
@@ -24,8 +24,8 @@ import json
 import os
 
 import torch
-from client import TwinClient
 from engine import PolicyNet, get_parameters
+from twin import TwinClient
 
 
 def _download_checkpoint(minio_client, bucket: str, fl_round: int) -> PolicyNet:

@@ -10,8 +10,8 @@ sys.path.insert(
     0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../src/core"))
 )
 
-from core.client import TwinClient, compute_returns
 from core.engine import PolicyNet
+from core.twin import TwinClient, compute_returns
 
 
 def test_compute_returns():
@@ -65,8 +65,8 @@ def test_twin_client_fit_eval_only():
     assert metrics == {}
 
 
-@patch("core.client.log_metrics")
-@patch("core.client.DigitalTwinEnv.collect_experience")
+@patch("core.twin.log_metrics")
+@patch("core.twin.DigitalTwinEnv.collect_experience")
 def test_twin_client_evaluate(mock_collect, mock_log):
     # Mock collect_experience to return dummy reward for speed
     mock_collect.return_value = (None, None, [100.0], None)
@@ -85,8 +85,8 @@ def test_twin_client_evaluate(mock_collect, mock_log):
     assert metrics["reward"] == 100.0
 
 
-@patch("core.client.log_metrics")
-@patch("core.client.DigitalTwinEnv.collect_experience")
+@patch("core.twin.log_metrics")
+@patch("core.twin.DigitalTwinEnv.collect_experience")
 def test_twin_client_fit_train(mock_collect, mock_log):
     # Mock collect_experience to return dummy data for speed
     mock_collect.return_value = (

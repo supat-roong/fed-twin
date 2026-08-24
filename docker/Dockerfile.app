@@ -27,6 +27,7 @@ RUN pip install --no-cache-dir torch --extra-index-url https://download.pytorch.
 
 COPY src/core/engine.py ./
 COPY src/core/client.py ./
+COPY src/core/twin.py ./
 COPY src/core/server.py ./
 COPY src/core/tracking.py ./
 COPY src/core/worker_entrypoint.py ./
