@@ -121,6 +121,7 @@ This project supports two primary deployment topologies to accurately simulate d
 
 ### 2. Multi-Cluster (Multi-Cluster Federation)
 *   **What it is:** True distributed federation using [Karmada](https://karmada.io/) to manage multiple distinct Kubernetes clusters. The aggregator runs on a "Host" cluster, while digital twin workers are scheduled across geographically simulated "Member" clusters.
+*   **How workers land on members:** each worker's Kubernetes `Job` is submitted to the Karmada control plane together with a per-worker `PropagationPolicy` that pins it to exactly one member cluster, round-robining workers across members (`worker_id % member_count + 1` — see `src/orchestration/dispatch.py`).
 *   **Real Use Case:** Mimics real-world production FL where digital twins are geographically dispersed across different regions or edge locations, each with their own isolated local Kubernetes cluster (e.g., connected autonomous vehicles computing locally in different geographic zones, or separate smart factories across the globe). It forces the system to handle cross-cluster networking, latency resilience, and robust multi-cluster scheduling.
 *   **Setup Command:** `make multi-cluster-setup` — bootstraps the host + member clusters via `vendor/fed-infra` using the `infra.env.multi` contract (mirrors `infra.env`; see the header comment in that file for the deltas). Installs `karmadactl` automatically if it isn't already on `PATH`.
 *   **Run Command:** `./run_pipeline.sh all_multi_cluster`
@@ -133,8 +134,8 @@ This project supports two primary deployment topologies to accurately simulate d
 This project implements two distinct pipeline strategies to explore different aspects of the ML lifecycle:
 
 ### 1. Functional Pipelines (The "Workhorse")
-*   **Files**: `fed_twin_single_cluster_pipeline.py`, `single_twin_single_cluster_pipeline.py`
-*   **Implementation**: Each round is a Temporal `TrainRoundWorkflow` that fans out one `WorkerWorkflow` per twin, each launching a Kubernetes `Job` running `worker_entrypoint.py`; workers exchange weights/metrics through MinIO, and aggregation is a plain mean over the training twins' uploads (`aggregate.py`).
+*   **Files**: `fed_twin_single_cluster_pipeline.py`, `single_twin_single_cluster_pipeline.py`, `fed_twin_multi_cluster_pipeline.py`, `single_twin_multi_cluster_pipeline.py`
+*   **Implementation**: Each round is a Temporal `TrainRoundWorkflow` that fans out one `WorkerWorkflow` per twin, each launching a Kubernetes `Job` running `worker_entrypoint.py`; workers exchange weights/metrics through MinIO, and aggregation is a plain mean over the training twins' uploads (`aggregate.py`). The multi-cluster pipelines run the exact same Temporal path — the only difference is that worker Jobs are dispatched through Karmada to member clusters instead of the local cluster (see `src/orchestration/dispatch.py`).
 *   **Why use it**: This is the efficient way to run experiments. Instead of launching individual KFP components for every round, the entire fleet orchestration happens inside a single component, driven by Temporal workflows. It handles distributed synchronization natively, making it much faster.
 *   **UI Representation**: Shows as a single, clean "Training" node in the Kubeflow graph.
 
@@ -142,6 +143,7 @@ This project implements two distinct pipeline strategies to explore different as
 *   **Files**: `fed_twin_visual_single_cluster_pipeline.py`, `single_twin_visual_single_cluster_pipeline.py`
 *   **Implementation**: Creates individual KFP components for every training and evaluation step.
 *   **Why use it**: Kubeflow's default representation can be opaque. These pipelines provide **better observability** by mapping each round and worker to a unique component, making it easy to track the flow of weights and parallel training in the Kubeflow UI.
+*   **Note**: Visual variants exist only for single-cluster mode — multi-cluster runs are functional-only, since their per-worker steps execute on remote member clusters outside the KFP graph.
 
 #### **Federated Learning DAG (`fed_twin_visual`)**
 ![Federated DAG](assets/fl-dag.png)
