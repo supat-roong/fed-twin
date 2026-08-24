@@ -1,523 +1,329 @@
+"""Single Twin pipeline, multi-cluster (Karmada) variant.
+
+Worker Jobs are dispatched through `dispatch.KarmadaJobDispatcher` via
+`topology="multi"`, placed round-robin across `members` member clusters, with
+worker MinIO/MLflow endpoints rewritten to host NodePorts at dispatch time
+(`activities._rewrite_endpoints_for_multi`); the aggregate/collect components
+run on the host cluster and use in-cluster DNS.
+"""
+
 import json
 
 from kfp import compiler, dsl
 from kfp.dsl import Artifact, Output
 
-# NOTE (Phase 3d): BROKEN as of the flwr/client.py/server.py deletion -- this
-# file's templated Deployments run `python server.py` / `python client.py`
-# inside fed-twin-app:v1, which no longer contains them. Replaced entirely in
-# Phase 4 by the Temporal/KarmadaJobDispatcher path (spec 3.4).
-
-
-@dsl.component(base_image="fed-twin-app:v1")
-def train_single_karmada(
-    namespace: str,
-    fl_rounds: int,
-    local_episodes: int,
-    eval_episodes: int,
-    job_id: str,
-    run_name: str,
-    mlflow_run_id: str,
-    mlflow_exp_name: str,
-    metrics: Output[Artifact],
-):
-    import csv
-    import re
-    import subprocess
-    import time
-
-    kubectl_path = "/usr/local/bin/kubectl"
-
-    # 1. Server Deployment (Master) -> Pinned to Host Cluster
-    # Even in "single", we use the server to sync weights between trainer on member1 and evaluator on host.
-    server_manifest_template = """
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: {{ job_name }}-server
-  namespace: {{ namespace }}
-  labels:
-    app: {{ job_name }}-server
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: {{ job_name }}-server
-  template:
-    metadata:
-      labels:
-        app: {{ job_name }}-server
-    spec:
-      serviceAccountName: default
-      containers:
-      - name: pytorch
-        image: fed-twin-app:v1
-        imagePullPolicy: IfNotPresent
-        command: ["/bin/bash", "-c"]
-        args:
-          - |
-            python server.py
-            echo "Server finished. Idling to prevent restart loop."
-            tail -f /dev/null
-        env:
-        - name: FL_ROUNDS
-          value: "{{ rounds }}"
-        - name: MIN_CLIENTS
-          value: "2"
-        - name: MLFLOW_TRACKING_URI
-          value: "http://multi-cluster-host-control-plane:30500"
-        - name: MLFLOW_EXPERIMENT_NAME
-          value: "{{ mlflow_exp_name }}"
-        - name: MLFLOW_RUN_ID
-          value: "{{ mlflow_run_id }}"
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: fl-server-service
-  namespace: {{ namespace }}
-spec:
-  type: NodePort
-  selector:
-    app: {{ job_name }}-server
-  ports:
-    - protocol: TCP
-      port: 8080
-      targetPort: 8080
-      nodePort: 32444
----
-apiVersion: policy.karmada.io/v1alpha1
-kind: PropagationPolicy
-metadata:
-  name: {{ job_name }}-server-propagation
-  namespace: {{ namespace }}
-spec:
-  resourceSelectors:
-    - apiVersion: apps/v1
-      kind: Deployment
-      name: {{ job_name }}-server
-    - apiVersion: v1
-      kind: Service
-      name: fl-server-service
-  placement:
-    clusterAffinity:
-      clusterNames:
-        - multi-cluster-host
-"""
-
-    worker_manifest_template = """
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: {{ job_name }}-worker-{{ index }}
-  namespace: {{ namespace }}
-  labels:
-    app: {{ job_name }}-worker
-    twin-id: {{ twin_id }}
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: {{ job_name }}-worker
-      twin-id: {{ twin_id }}
-  template:
-    metadata:
-      labels:
-        app: {{ job_name }}-worker
-        twin-id: {{ twin_id }}
-    spec:
-      containers:
-      - name: pytorch
-        image: fed-twin-app:v1
-        imagePullPolicy: IfNotPresent
-        command: ["/bin/bash", "-c"]
-        args:
-          - |
-            export EVAL_ONLY="{{ eval_only }}"
-            export TWIN_ID="{{ twin_id }}"
-            
-            echo "IDENTIFIED: {{ mode }} TWIN $TWIN_ID"
-            
-            python client.py
-            
-            echo "Worker finished. Idling to prevent restart loop and duplicate MLflow logs."
-            tail -f /dev/null
-        env:
-        - name: SERVER_ADDR
-          value: "{{ server_addr }}:32444"
-        - name: LOCAL_EPISODES
-          value: "{{ local_episodes }}"
-        - name: EVAL_EPISODES
-          value: "{{ eval_episodes }}"
-        - name: LEARNING_RATE
-          value: "{{ learning_rate }}"
-        - name: GAMMA
-          value: "{{ gamma }}"
-        - name: ENTROPY_COEFF
-          value: "{{ entropy_coeff }}"
-        - name: MAX_GRAD_NORM
-          value: "{{ max_grad_norm }}"
-        - name: MLFLOW_TRACKING_URI
-          value: "http://multi-cluster-host-control-plane:30500"
-        - name: MLFLOW_EXPERIMENT_NAME
-          value: "{{ mlflow_exp_name }}"
-        - name: MLFLOW_RUN_ID
-          value: "{{ mlflow_run_id }}"
-        - name: MLFLOW_S3_ENDPOINT_URL
-          value: "http://minio-service.kubeflow:9000"
-        - name: AWS_ACCESS_KEY_ID
-          value: "minio"
-        - name: AWS_SECRET_ACCESS_KEY
-          value: "minio123"
-        - name: MLFLOW_S3_IGNORE_TLS
-          value: "true"
----
-apiVersion: policy.karmada.io/v1alpha1
-kind: PropagationPolicy
-metadata:
-  name: {{ job_name }}-worker-{{ index }}-propagation
-  namespace: {{ namespace }}
-spec:
-  resourceSelectors:
-    - apiVersion: apps/v1
-      kind: Deployment
-      name: {{ job_name }}-worker-{{ index }}
-  placement:
-    clusterAffinity:
-      clusterNames:
-        - {{ target_cluster }}
-"""
-
-    job_name = f"single-job-{job_id}"
-
-    # Fetch Configs via Kubernetes Secret created by automate_run.py
-    import base64 as _b64
-
-    secret_name = f"karmconfigs-{mlflow_run_id}"
-    print(f"Fetching Karmada configs from secret: {secret_name}")
-    try:
-        karmada_b64 = subprocess.check_output(
-            [
-                kubectl_path,
-                "get",
-                "secret",
-                secret_name,
-                "-n",
-                "kubeflow",
-                "-o",
-                "jsonpath={.data.karmada}",
-            ]
-        ).decode("utf-8")
-        members_b64 = subprocess.check_output(
-            [
-                kubectl_path,
-                "get",
-                "secret",
-                secret_name,
-                "-n",
-                "kubeflow",
-                "-o",
-                "jsonpath={.data.members}",
-            ]
-        ).decode("utf-8")
-    except Exception as e:
-        print(f"Failed to fetch secrets: {e}")
-        raise e
-
-    karmada_config = _b64.b64decode(karmada_b64).decode("utf-8")
-    member_kubeconfigs = _b64.b64decode(members_b64).decode("utf-8")
-
-    # Extract host cluster IPv4
-    import json as _json_pre
-    import re as _re
-
-    try:
-        _cfgs = _json_pre.loads(member_kubeconfigs)
-        _host_kc = _cfgs.get("host", "")
-        _ip_match = _re.search(r"https?://([\d.]+):", _host_kc)
-        host_internal_ip = "multi-cluster-host-control-plane"
-    except Exception:
-        host_internal_ip = "multi-cluster-host-control-plane"
-
-    print(f"Karmada Single Training Mode: Server on {host_internal_ip}:32444")
-
-    # Render Server
-    server_manifest = (
-        server_manifest_template.replace("{{ job_name }}", job_name)
-        .replace("{{ rounds }}", str(fl_rounds))
-        .replace("{{ namespace }}", namespace)
-        .replace("{{ mlflow_run_id }}", mlflow_run_id)
-        .replace("{{ mlflow_exp_name }}", mlflow_exp_name)
-    )
-    with open("/tmp/server.yaml", "w") as f:
-        f.write(server_manifest)
-
-    # Render Workers (Exactly 2: 1 Evaluator on Host, 1 Trainer on Member1)
-    with open("/tmp/worker.yaml", "w") as f:
-        f.write("")
-
-    # Index 0: global-eval -> host
-    # Index 1: train-twin-1 -> member1
-    for i in range(2):
-        if i == 0:
-            twin_id = "eval-twin-global"
-            eval_only = "true"
-            mode = "EVALUATION"
-            target_cluster = "multi-cluster-host"
-        else:
-            twin_id = "train-twin-1"
-            eval_only = "false"
-            mode = "TRAINING"
-            target_cluster = "multi-cluster-member1"
-
-        worker_manifest = (
-            worker_manifest_template.replace("{{ job_name }}", job_name)
-            .replace("{{ index }}", str(i))
-            .replace("{{ twin_id }}", twin_id)
-            .replace("{{ eval_only }}", eval_only)
-            .replace("{{ mode }}", mode)
-            .replace("{{ target_cluster }}", target_cluster)
-            .replace("{{ namespace }}", namespace)
-            .replace("{{ local_episodes }}", str(local_episodes))
-            .replace("{{ eval_episodes }}", str(eval_episodes))
-            .replace("{{ learning_rate }}", "0.003")
-            .replace("{{ gamma }}", "0.99")
-            .replace("{{ entropy_coeff }}", "0.01")
-            .replace("{{ max_grad_norm }}", "0.5")
-            .replace("{{ mlflow_run_id }}", mlflow_run_id)
-            .replace("{{ mlflow_exp_name }}", mlflow_exp_name)
-            .replace("{{ server_addr }}", host_internal_ip)
-        )
-        with open("/tmp/worker.yaml", "a") as f:
-            f.write(worker_manifest + "\n---\n")
-
-    kubeconfig_data = karmada_config.replace(
-        "https://127.0.0.1:32443",
-        "https://karmada-apiserver.karmada-system.svc.cluster.local:5443",
-    )
-    with open("/tmp/karmada.config", "w") as f:
-        f.write(kubeconfig_data)
-
-    # Apply manifests
-    print("Applying Single Twin manifests to Karmada...", flush=True)
-    subprocess.run(
-        [
-            kubectl_path,
-            "--kubeconfig",
-            "/tmp/karmada.config",
-            "--insecure-skip-tls-verify",
-            "apply",
-            "-f",
-            "/tmp/server.yaml",
-            "--force",
-            "--validate=false",
-        ],
-        check=True,
-    )
-    subprocess.run(
-        [
-            kubectl_path,
-            "--kubeconfig",
-            "/tmp/karmada.config",
-            "--insecure-skip-tls-verify",
-            "apply",
-            "-f",
-            "/tmp/worker.yaml",
-            "--force",
-            "--validate=false",
-        ],
-        check=True,
-    )
-
-    # Metrics Scraping (Reuse robust FL logic)
-    import json as _json
-
-    metric_pattern = re.compile(
-        r"Twin ([\w-]+)\s+\[Round (\d+)\]\s+\[METRIC\]\s+(\S+)\s+Reward:\s+([-\d.]+)\s+Loss:\s+([-\d.]+)"
-    )
-    with open(metrics.path, "w", newline="") as f:
-        csv.writer(f).writerow(["round", "twin_id", "mode", "reward", "loss"])
-
-    try:
-        cluster_configs = _json.loads(member_kubeconfigs)
-    except Exception:
-        cluster_configs = {}
-
-    kube_paths = {}
-    for cluster_name, kc_content in cluster_configs.items():
-        kube_path = f"/tmp/kube_{cluster_name}.config"
-        with open(kube_path, "w") as f:
-            f.write(kc_content)
-        kube_paths[cluster_name] = kube_path
-
-    if not kube_paths:
-        kube_paths["host"] = "/tmp/karmada.config"
-
-    time.sleep(15)
-
-    log_streams = []
-    for cluster_name, kube_path in kube_paths.items():
-        for label_selector in [f"app={job_name}-worker", f"app={job_name}-server"]:
-            cmd = [
-                kubectl_path,
-                f"--kubeconfig={kube_path}",
-                "--insecure-skip-tls-verify",
-                "logs",
-                "-f",
-                "-l",
-                label_selector,
-                "-n",
-                namespace,
-                "--all-containers",
-                "--prefix=true",
-                "--pod-running-timeout=60s",
-            ]
-            p = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                bufsize=1,
-            )
-            log_streams.append((cluster_name, label_selector, p))
-            print(f"  Started log stream: {cluster_name}/{label_selector}", flush=True)
-
-    start_time = time.time()
-    metric_count = 0
-    last_metric_time = time.time()
-    # 1 server + 1 eval worker + 1 training worker = 3 pods total
-    total_pods = 3
-    idle_signals = 0
-    # Training twin logs TRAIN + EVAL. Eval twin logs only EVAL.
-    expected = (fl_rounds * 1 * 2) + (fl_rounds * 1)
-
-    print(
-        f"Monitoring Single training... (expecting {expected} metrics from {total_pods} pods)",
-        flush=True,
-    )
-    import queue
-    import threading
-
-    log_queue = queue.Queue()
-
-    def stream_reader(q, stream):
-        for line in stream:
-            q.put(line)
-
-    for _, _, p in log_streams:
-        t = threading.Thread(target=stream_reader, args=(log_queue, p.stdout))
-        t.daemon = True
-        t.start()
-
-    try:
-        while time.time() - start_time < 3600:
-            try:
-                line = log_queue.get(timeout=2.0)
-            except queue.Empty:
-                alive = [s for s in log_streams if s[2].poll() is None]
-                if not alive and log_queue.empty():
-                    print("All log streams ended.", flush=True)
-                    break
-                continue
-
-            print(line, end="", flush=True)
-
-            # Detect pods finishing — each pod prints this exactly once
-            if "finished. Idling" in line:
-                idle_signals += 1
-                print(
-                    f"[FINISH] Idle signal {idle_signals}/{total_pods} received.",
-                    flush=True,
-                )
-
-            # Atomic Match
-            match = metric_pattern.search(line)
-            if match:
-                twin_id, rd, mode, reward, loss = match.groups()
-                csv_mode = "EVAL" if "EVAL" in mode else "TRAIN"
-                if mode == "EVAL-ONLY-SKIP":
-                    continue
-                metric_count += 1
-                last_metric_time = time.time()
-
-                # Write to CSV
-                with open(metrics.path, "a", newline="") as f:
-                    csv.writer(f).writerow([rd, twin_id, csv_mode, reward, loss])
-
-                if metric_count % 10 == 0 or metric_count <= 5:
-                    print(
-                        f"[OK] Metric #{metric_count}: R={rd}, Twin={twin_id}, Mode={mode}, Rew={reward}",
-                        flush=True,
-                    )
-
-            # Exit 1: all pods signalled they are done AND expected metrics are captured
-            if idle_signals >= total_pods and metric_count >= expected:
-                print(
-                    f"[SUCCESS] All {total_pods} pods finished and expected metrics "
-                    f"({metric_count}/{expected}) captured. Finishing.",
-                    flush=True,
-                )
-                break
-
-            # Exit 3: short stall — no new metrics for 30s after we already have some
-            if metric_count > 0 and (time.time() - last_metric_time) > 45:
-                print(
-                    f"[WARNING] No new metrics for 45s (got {metric_count}/{expected}). Training likely done.",
-                    flush=True,
-                )
-                break
-
-        else:
-            print(
-                f"[WARNING] Timeout reached after 1 hour (got {metric_count}/{expected})",
-                flush=True,
-            )
-    except Exception as e:
-        print(f"Monitor error: {e}", flush=True)
-    finally:
-        for _, _, p in log_streams:
-            try:
-                p.terminate()
-            except Exception:
-                pass
-
-
-# Load Config Defaults
+# Reuse config if available, or defaults
 try:
     with open("config/config.json") as f:
-        config_data = json.load(f)
+        config = json.load(f)
 except FileNotFoundError:
-    config_data = {"fl_rounds": 5, "local_episodes": 5}
+    config = {"fl_rounds": 10, "num_workers": 1, "local_episodes": 10}
+
+print(f"Compiling Single-Twin-FL Pipeline with Config: {config}")
+
+
+@dsl.component(base_image="fed-twin-app:v1", packages_to_install=[])
+def train_workers(
+    fl_round: int,
+    num_workers: int,
+    local_episodes: int,
+    eval_episodes: int,
+    namespace: str,
+    temporal_address: str,
+    kfp_run_id: str,
+    mlflow_tracking_uri: str,
+    mlflow_experiment_name: str,
+    mlflow_run_id: str,
+    minio_endpoint: str,
+    minio_access_key: str,
+    minio_secret_key: str,
+    minio_bucket: str,
+    worker_image: str,
+    topology: str,
+    members: int,
+    member_prefix: str,
+    minio_nodeport: int,
+    mlflow_nodeport: int,
+    learning_rate: float,
+    gamma: float,
+    entropy_coeff: float,
+    max_grad_norm: float,
+    worker_report: Output[Artifact],
+):
+    """Run one round's worker fleet via Temporal, blocking on the result.
+
+    Starts a TrainRoundWorkflow with a deterministic workflow id (kfp_run_id
+    + fl_round), so a retried KFP step reattaches to the already-running
+    round instead of launching a second one.
+    """
+    import asyncio
+    import json
+    import sys
+
+    sys.path.insert(0, "/app")
+
+    from temporalio.client import Client, WorkflowFailureError
+    from temporalio.common import WorkflowIDConflictPolicy
+
+    from src.orchestration.types import RoundSpec
+    from src.orchestration.workflows import TASK_QUEUE, TrainRoundWorkflow
+
+    # num_workers counts training twins (config.json's meaning under the
+    # flower launcher); the fleet adds rank 0, the eval-only twin, on top --
+    # preserving flower's `replicas: num_workers + 1` semantics (D5) and its
+    # exact per-round CSV row count. The +1 lives here, inside the component,
+    # because KFP cannot do arithmetic on a dsl parameter at trace time.
+    fleet_size = num_workers + 1
+    spec = RoundSpec(
+        fl_round=fl_round,
+        num_workers=fleet_size,
+        min_workers=fleet_size,
+        local_episodes=local_episodes,
+        eval_episodes=eval_episodes,
+        namespace=namespace,
+        worker_image=worker_image,
+        minio_endpoint=minio_endpoint,
+        minio_access_key=minio_access_key,
+        minio_secret_key=minio_secret_key,
+        minio_bucket=minio_bucket,
+        mlflow_tracking_uri=mlflow_tracking_uri,
+        mlflow_experiment_name=mlflow_experiment_name,
+        mlflow_run_id=mlflow_run_id,
+        kfp_run_id=kfp_run_id,
+        topology=topology,
+        member_count=members,
+        member_prefix=member_prefix,
+        minio_nodeport=minio_nodeport,
+        mlflow_nodeport=mlflow_nodeport,
+        learning_rate=learning_rate,
+        gamma=gamma,
+        entropy_coeff=entropy_coeff,
+        max_grad_norm=max_grad_norm,
+    )
+
+    async def _run() -> dict:
+        client = await Client.connect(temporal_address)
+        handle = await client.start_workflow(
+            TrainRoundWorkflow.run,
+            spec,
+            id=f"ftwn-train-{kfp_run_id[:8]}-r{fl_round}",
+            task_queue=TASK_QUEUE,
+            id_conflict_policy=WorkflowIDConflictPolicy.USE_EXISTING,
+        )
+        print(f"started Temporal workflow {handle.id}")
+        print(
+            "Temporal workflow: "
+            f"http://localhost:8233/namespaces/default/workflows/{handle.id}"
+        )
+        try:
+            report = await handle.result()
+        except WorkflowFailureError as e:
+            # Mirrors active-fed's own fix for the identical gap: without
+            # this, a quorum failure raises before the per-worker
+            # attribution the workflow already tracked ever reaches an
+            # artifact. The round must still fail -- re-raise after writing
+            # what's known.
+            statuses = await handle.query(TrainRoundWorkflow.status)
+            payload = {
+                "fl_round": fl_round,
+                "succeeded": sorted(
+                    wid for wid, s in statuses.items() if s.phase == "Succeeded"
+                ),
+                "failed": sorted(
+                    wid for wid, s in statuses.items() if s.phase != "Succeeded"
+                ),
+                "results": [vars(statuses[wid]) for wid in sorted(statuses)],
+                "temporal_workflow_id": handle.id,
+                "error": str(e),
+            }
+            print(json.dumps(payload, indent=2))
+            with open(worker_report.path, "w") as f:
+                json.dump(payload, f, indent=2)
+            raise
+        return {
+            "fl_round": report.fl_round,
+            "succeeded": report.succeeded_ids,
+            "failed": report.failed_ids,
+            "results": [vars(r) for r in report.results],
+            "temporal_workflow_id": handle.id,
+        }
+
+    payload = asyncio.run(_run())
+    print(json.dumps(payload, indent=2))
+    with open(worker_report.path, "w") as f:
+        json.dump(payload, f, indent=2)
+
+
+@dsl.component(base_image="fed-twin-app:v1", packages_to_install=[])
+def aggregate_round(
+    fl_round: int,
+    num_workers: int,
+    minio_endpoint: str,
+    minio_access_key: str,
+    minio_secret_key: str,
+    minio_bucket: str,
+):
+    """Mean the round's training-worker weights and write the next round's
+    global checkpoint. No evaluation logic lives here -- the eval-twin
+    (worker 0, RANK==0) already ran inside the worker fleet itself.
+    """
+    import sys
+
+    sys.path.insert(0, "/app")
+
+    from aggregate import run_aggregate_round
+    from minio import Minio
+
+    minio_client = Minio(
+        endpoint=minio_endpoint,
+        access_key=minio_access_key,
+        secret_key=minio_secret_key,
+        secure=False,
+    )
+    # num_workers counts training twins; the fleet is num_workers + 1 (rank 0
+    # is the eval twin). run_aggregate_round reads ranks 1..fleet-1, i.e.
+    # exactly the num_workers training twins.
+    run_aggregate_round(minio_client, minio_bucket, fl_round, num_workers + 1)
+
+
+@dsl.component(base_image="fed-twin-app:v1", packages_to_install=[])
+def collect_metrics_csv(
+    fl_rounds: int,
+    num_workers: int,
+    minio_endpoint: str,
+    minio_access_key: str,
+    minio_secret_key: str,
+    minio_bucket: str,
+    metrics: Output[Artifact],
+):
+    """Read every round's worker metrics.json from MinIO and write the same
+    (round, twin_id, mode, reward, loss) CSV the flower-launcher path already
+    produces from its log-scrape -- runs once, after every round has
+    finished, not per-round.
+    """
+    import csv
+    import sys
+
+    sys.path.insert(0, "/app")
+
+    from metrics_csv import collect_metrics_rows
+    from minio import Minio
+
+    minio_client = Minio(
+        endpoint=minio_endpoint,
+        access_key=minio_access_key,
+        secret_key=minio_secret_key,
+        secure=False,
+    )
+    # num_workers counts training twins; the fleet is num_workers + 1 (rank 0
+    # is the eval twin). collect_metrics_rows reads ranks 0..fleet-1.
+    rows = collect_metrics_rows(minio_client, minio_bucket, fl_rounds, num_workers + 1)
+
+    with open(metrics.path, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["round", "twin_id", "mode", "reward", "loss"])
+        writer.writerows(rows)
+
+    print(f"Collected {len(rows)} metric rows across {fl_rounds} rounds.")
 
 
 @dsl.pipeline(
-    name="Single Twin Multi-Cluster Pipeline",
-    description="Non-federated baseline on multi-cluster setup (Member1=Trainer, Host=Evaluator)",
+    name="Single Twin Multi Cluster Pipeline",
+    description="Runs single twin training across Karmada member clusters",
 )
 def single_twin_multi_cluster_pipeline(
-    namespace: str = "default",
-    fl_rounds: int = config_data.get("fl_rounds", 5),
-    local_episodes: int = config_data.get("local_episodes", 10),
-    eval_episodes: int = config_data.get("eval_episodes", 20),
-    run_name: str = "single_twin_multi_cluster_run_default",
+    namespace: str = "kubeflow",
+    local_episodes: int = config.get("local_episodes", 10),
+    eval_episodes: int = config.get("eval_episodes", 20),
     mlflow_run_id: str = "",
     mlflow_exp_name: str = "Single-Twin-Multi-Cluster",
+    temporal_address: str = "temporal-frontend.kubeflow.svc.cluster.local:7233",
+    minio_endpoint: str = "minio-service.kubeflow.svc.cluster.local:9000",
+    minio_access_key: str = "minio",
+    minio_secret_key: str = "minio123",
+    minio_bucket: str = "mlflow-artifacts",
+    worker_image: str = "fed-twin-app:v1",
+    # Multi-cluster placement. Defaults MUST agree with infra.env.multi
+    # (FED_MEMBER_COUNT / FED_MEMBER_PREFIX / FED_NODEPORT_MINIO_API /
+    # FED_NODEPORT_MLFLOW) -- tests/test_multi_cluster_contract.py enforces
+    # this; a mismatch here silently targets the wrong clusters or hands
+    # member-cluster workers unreachable endpoints.
+    topology: str = "multi",
+    members: int = 2,
+    member_prefix: str = "multi-cluster-member",
+    minio_nodeport: int = 30900,
+    mlflow_nodeport: int = 30500,
 ):
-    import time
+    import uuid
 
-    job_id = str(int(time.time()))
-    train_single_karmada(
-        namespace=namespace,
-        fl_rounds=fl_rounds,
-        local_episodes=local_episodes,
-        eval_episodes=eval_episodes,
-        job_id=job_id,
-        run_name=run_name,
-        mlflow_run_id=mlflow_run_id,
-        mlflow_exp_name=mlflow_exp_name,
-    ).set_env_variable(
-        "MLFLOW_TRACKING_URI", "http://multi-cluster-host-control-plane:30500"
-    )
+    # The 8 chars consumed by workflow ids and Job names need real
+    # entropy: a truncated epoch timestamp changes only every 100s, and
+    # USE_EXISTING would silently attach a second same-window submission
+    # to the first's running round. uuid hex is lowercase alphanumeric,
+    # satisfying the Job-name fragment rule. Computed at trace time, so
+    # resubmitting one compiled YAML (KFP UI clone / recurring run)
+    # reuses the id -- recompile per run, as run_pipeline.sh already does.
+    job_id = uuid.uuid4().hex[:8]
+
+    # 1 training twin; the components derive the fleet as num_workers + 1
+    # (rank 0 is the eval twin), so this yields 2 Jobs per round --
+    # matching today's flower-path template's hardcoded "replicas: 2".
+    # single_twin has never exposed num_workers as a parameter, and this
+    # phase changes wiring, not scope.
+    num_workers = 1
+    prev_op = None
+    for round_idx in range(config.get("fl_rounds", 10)):
+        train_op = train_workers(
+            fl_round=round_idx,
+            num_workers=num_workers,
+            local_episodes=local_episodes,
+            eval_episodes=eval_episodes,
+            namespace=namespace,
+            temporal_address=temporal_address,
+            kfp_run_id=job_id,
+            mlflow_tracking_uri="http://mlflow-service.kubeflow:5000",
+            mlflow_experiment_name=mlflow_exp_name,
+            mlflow_run_id=mlflow_run_id,
+            minio_endpoint=minio_endpoint,
+            minio_access_key=minio_access_key,
+            minio_secret_key=minio_secret_key,
+            minio_bucket=minio_bucket,
+            worker_image=worker_image,
+            topology=topology,
+            members=members,
+            member_prefix=member_prefix,
+            minio_nodeport=minio_nodeport,
+            mlflow_nodeport=mlflow_nodeport,
+            learning_rate=config.get("learning_rate", 0.003),
+            gamma=config.get("gamma", 0.99),
+            entropy_coeff=config.get("entropy_coeff", 0.01),
+            max_grad_norm=config.get("max_grad_norm", 0.5),
+        ).set_retry(num_retries=2, backoff_duration="60s", backoff_factor=2.0)
+        if prev_op is not None:
+            train_op.after(prev_op)
+
+        agg_op = (
+            aggregate_round(
+                fl_round=round_idx,
+                num_workers=num_workers,
+                minio_endpoint=minio_endpoint,
+                minio_access_key=minio_access_key,
+                minio_secret_key=minio_secret_key,
+                minio_bucket=minio_bucket,
+            )
+            .after(train_op)
+            .set_retry(num_retries=2, backoff_duration="60s", backoff_factor=2.0)
+        )
+        prev_op = agg_op
+
+    collect_metrics_csv(
+        fl_rounds=config.get("fl_rounds", 10),
+        num_workers=num_workers,
+        minio_endpoint=minio_endpoint,
+        minio_access_key=minio_access_key,
+        minio_secret_key=minio_secret_key,
+        minio_bucket=minio_bucket,
+    ).after(prev_op)
 
 
 if __name__ == "__main__":
