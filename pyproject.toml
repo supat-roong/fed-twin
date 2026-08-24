@@ -6,7 +6,6 @@ readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "boto3==1.42.48",
-    "flwr==1.26.1",
     "google-cloud-storage==3.9.0",
     "gymnasium==1.2.3",
     "jinja2==3.1.6",
@@ -31,6 +30,14 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    # alembic: mlflow-skinny's SqlAlchemyStore backend imports it for db
+    # migrations. It was only ever present transitively via the federated
+    # learning framework removed in Phase 3d, whose own dependency on it
+    # masked this gap. Tests need it because tests/conftest.py points
+    # MLFLOW_TRACKING_URI at sqlite:///:memory:, which routes through
+    # SqlAlchemyStore -- production points at a real MLflow HTTP server and
+    # never touches this path.
+    "alembic",
     "pytest>=9.0.2",
     "pytest-asyncio>=0.23.0",
     "pytest-cov>=7.0.0",

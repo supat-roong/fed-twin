@@ -3,6 +3,11 @@ import json
 from kfp import compiler, dsl
 from kfp.dsl import Artifact, Output
 
+# NOTE (Phase 3d): BROKEN as of the flwr/client.py/server.py deletion -- this
+# file's templated Deployments run `python server.py` / `python client.py`
+# inside fed-twin-app:v1, which no longer contains them. Replaced entirely in
+# Phase 4 by the Temporal/KarmadaJobDispatcher path (spec 3.4).
+
 
 @dsl.component(base_image="fed-twin-app:v1")
 def train_single_karmada(
