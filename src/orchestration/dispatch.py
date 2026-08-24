@@ -278,6 +278,12 @@ class KarmadaJobDispatcher:
         name = manifest["metadata"]["name"]
         try:
             batch.create_namespaced_job(namespace=spec.namespace, body=manifest)
+            # Mirrors activities._ensure_job's "created Job {name}" line for the
+            # single-topology path. Without this, the Temporal worker's own logs
+            # -- the only durable record once cleanup_worker_job deletes the Job
+            # and its PropagationPolicy on success -- carry no evidence that a
+            # multi-cluster dispatch ever happened at all.
+            log.info(f"created Job {name} on Karmada, targeting member cluster {spec.member_cluster!r}")
         except ApiException as e:
             if e.status != 409:
                 raise
