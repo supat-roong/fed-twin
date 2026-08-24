@@ -236,11 +236,9 @@ def fed_twin_single_cluster_pipeline(
     # reuses the id -- recompile per run, as run_pipeline.sh already does.
     job_id = uuid.uuid4().hex[:8]
 
-    # fl_rounds above is a dsl.pipeline parameter -- a
-    # PipelineParameterChannel placeholder at trace time, not a real
-    # int, so it cannot bound this range() (see Global Constraints).
-    # config is a plain dict read at trace time above; reading it again
-    # here gives a concrete int this loop can safely use.
+    # The round count is trace-time by design: KFP freezes the DAG shape
+    # (how many train_workers tasks exist) the moment this function is
+    # defined, so it must come from config, never from a runtime value.
     prev_op = None
     for round_idx in range(config.get("fl_rounds", 5)):
         train_op = train_workers(

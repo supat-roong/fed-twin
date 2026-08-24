@@ -33,5 +33,5 @@ COPY src/core/aggregate.py ./
 COPY src/core/metrics_csv.py ./
 COPY src/orchestration/ ./src/orchestration/
 
-# Entrypoint can be overridden by PyTorchJob/Pipeline
+# Entrypoint can be overridden by the Pipeline/Job command
 ENTRYPOINT ["python"]

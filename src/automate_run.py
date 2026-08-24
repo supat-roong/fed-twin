@@ -272,10 +272,8 @@ def run_experiment():
             print(f"Warning: Could not parse {cfg['yaml']}: {e}")
 
         all_args = {
-            "run_name": run_name,
             "mlflow_run_id": mlflow_run_id,
             "mlflow_exp_name": exp_name,
-            "fl_rounds": _cfg.get("fl_rounds", 5),
             "num_workers": _w,
             "local_episodes": _cfg.get("local_episodes", 10),
             "eval_episodes": _cfg.get("eval_episodes", 20),

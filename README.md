@@ -1,6 +1,6 @@
 # 🤖 Federated Digital Twin with Kubeflow
 
-[![Stack: Kubeflow](https://img.shields.io/badge/Stack-Kubeflow%20|%20PyTorch%20|%20Flower-blue)](https://kubeflow.org)
+[![Stack: Kubeflow](https://img.shields.io/badge/Stack-Kubeflow%20|%20PyTorch%20|%20Temporal-blue)](https://kubeflow.org)
 
 A personal project for learning **Distributed Digital Twin Training** using Federated Learning. This implementation acts as a simulation framework designed for local Kubernetes clusters (e.g., Kind, Minikube) to mock a distributed fleet of systems. While tested extensively on macOS (Colima/Kind), it is compatible with any local Kubernetes environment.
 
@@ -134,8 +134,8 @@ This project implements two distinct pipeline strategies to explore different as
 
 ### 1. Functional Pipelines (The "Workhorse")
 *   **Files**: `fed_twin_single_cluster_pipeline.py`, `single_twin_single_cluster_pipeline.py`
-*   **Implementation**: Uses a single `PyTorchJob` Custom Resource from the Kubeflow Training Operator.
-*   **Why use it**: This is the efficient way to run experiments. Instead of launching individual pods for every round, the entire fleet orchestration is delegated to the Training Operator. It handles distributed synchronization natively, making it much faster.
+*   **Implementation**: Each round is a Temporal `TrainRoundWorkflow` that fans out one `WorkerWorkflow` per twin, each launching a Kubernetes `Job` running `worker_entrypoint.py`; workers exchange weights/metrics through MinIO, and aggregation is a plain mean over the training twins' uploads (`aggregate.py`).
+*   **Why use it**: This is the efficient way to run experiments. Instead of launching individual KFP components for every round, the entire fleet orchestration happens inside a single component, driven by Temporal workflows. It handles distributed synchronization natively, making it much faster.
 *   **UI Representation**: Shows as a single, clean "Training" node in the Kubeflow graph.
 
 ### 2. Visual Pipelines (The "Narrative")
@@ -260,7 +260,7 @@ make multi-cluster-teardown     # Teardown Multi-Cluster mode
 
 ## 📂 Repository Structure
 
-*   **/src/core**: The core code of the project, including `engine.py` (physics simulation), `client.py` (RL training), and `server.py` (FL aggregation).
+*   **/src/core**: The core code of the project, including `engine.py` (physics simulation), `twin.py` (one twin's RL training/evaluation), `worker_entrypoint.py` (the per-worker Job body), `aggregate.py` (plain-mean FedAvg), `metrics_csv.py` (post-run CSV assembly), and `tracking.py` (MLflow).
 *   **/src/pipelines**: Definitions for Kubeflow Pipelines (KFP).
 *   **/src/analysis**: Python scripts for generating professional plots and metrics analysis.
 *   **/metrics**: Consolidated CSV results from every cluster run.

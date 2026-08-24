@@ -197,9 +197,9 @@ def single_twin_visual_single_cluster_pipeline(
     # the functional single_twin pipeline exactly.
     num_workers = 1
     prev_op = None
-    # fl_rounds above is a dsl parameter -- a placeholder at trace time,
-    # not a real int, so it cannot bound this range() (see Global
-    # Constraints). config is a plain dict read at trace time.
+    # The round count is trace-time by design: KFP freezes the DAG shape
+    # (how many train_workers tasks exist) the moment this function is
+    # defined, so it must come from config, never from a runtime value.
     for r in range(1, config.get("fl_rounds", 10) + 1):
         train_op = run_worker_via_temporal(
             worker_id=1,

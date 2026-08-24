@@ -862,7 +862,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "alembic" },
+    { name = "alembic", specifier = ">=1.13" },
     { name = "pytest", specifier = ">=9.0.2" },
     { name = "pytest-asyncio", specifier = ">=0.23.0" },
     { name = "pytest-cov", specifier = ">=7.0.0" },

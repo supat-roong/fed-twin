@@ -23,6 +23,10 @@ def collect_metrics_rows(minio_client, minio_bucket: str, fl_rounds: int, num_wo
     that upload is itself the completion signal Phase 1's
     wait_for_worker_artifact polls for, so it is always present by the time
     this function is called (after the whole round loop has finished).
+
+    A missing key therefore raises out of get_object and fails the component
+    loudly -- deliberately unhandled, since silence here was exactly the old
+    log-scrape's failure mode.
     """
     rows = []
     for fl_round in range(fl_rounds):

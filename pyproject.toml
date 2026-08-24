@@ -37,7 +37,7 @@ dev = [
     # MLFLOW_TRACKING_URI at sqlite:///:memory:, which routes through
     # SqlAlchemyStore -- production points at a real MLflow HTTP server and
     # never touches this path.
-    "alembic",
+    "alembic>=1.13",
     "pytest>=9.0.2",
     "pytest-asyncio>=0.23.0",
     "pytest-cov>=7.0.0",
