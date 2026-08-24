@@ -263,10 +263,33 @@ make multi-cluster-teardown     # Teardown Multi-Cluster mode
 ## 📂 Repository Structure
 
 *   **/src/core**: The core code of the project, including `engine.py` (physics simulation), `twin.py` (one twin's RL training/evaluation), `worker_entrypoint.py` (the per-worker Job body), `aggregate.py` (plain-mean FedAvg), `metrics_csv.py` (post-run CSV assembly), and `tracking.py` (MLflow).
-*   **/src/pipelines**: Definitions for Kubeflow Pipelines (KFP).
+*   **/src/orchestration**: The Temporal layer — `workflows.py` (`TrainRoundWorkflow` / `WorkerWorkflow`), `activities.py` (worker Job lifecycle), `dispatch.py` (local vs. Karmada Job dispatch), and `worker_main.py` (the Temporal worker process deployed via `k8s/temporal-worker.yaml`).
+*   **/src/pipelines**: Definitions for Kubeflow Pipelines (KFP) — functional and visual variants.
 *   **/src/analysis**: Python scripts for generating professional plots and metrics analysis.
+*   **/src/automate_run.py, /src/fetch_results.py**: Pipeline submission and post-run metrics download — the steps `run_pipeline.sh` drives.
+*   **/tests**: Pytest suite covering the core, orchestration, pipelines, and the multi-cluster contract (`test_multi_cluster_contract.py`).
+*   **/k8s**: In-cluster manifests: the Temporal worker Deployment and its RBAC.
+*   **/setup**: Install/teardown scripts behind the `make *-setup` / `*-teardown` targets.
+*   **/pipeline_specs**: Compiled KFP pipeline YAML (generated output).
+*   **/config**: `config.json` — shared runtime defaults such as `num_workers`.
+*   **/docker**: `Dockerfile.app` — the worker/pipeline image (`fed-twin-app:v1`, built via `make build-images`).
+*   **/vendor/fed-infra**: Git submodule providing cluster bootstrap (`fed-infra-up`/`fed-infra-down`), driven by `infra.env` / `infra.env.multi`.
 *   **/metrics**: Consolidated CSV results from every cluster run.
 *   **/plots**: Generated visualizations showing project performance.
+
+---
+
+## 🛠 Development
+
+```bash
+make install-dev     # Install all dependencies (uv sync)
+make test            # Run the pytest suite
+make lint            # Ruff lint on src/ and tests/
+make fmt             # Ruff format
+make type-check      # Mypy on src/
+make ci              # lint + test + compile-pipeline
+make contracts       # Dry-run render infra.env & infra.env.multi via fed-infra
+```
 
 ---
 
