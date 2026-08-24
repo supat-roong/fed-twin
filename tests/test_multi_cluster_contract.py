@@ -80,8 +80,11 @@ def test_topology_defaults_to_multi():
 
 
 def test_member_count_matches_config_num_workers():
-    """Kept from the old contract suite: FED_MEMBER_COUNT is maintained by hand
-    to match config.json's num_workers (infra.env.multi's own comment)."""
+    """Dev-profile convention, not a requirement: one member cluster per
+    training twin. worker_spec() round-robins workers across members
+    (worker_id % member_count + 1), so unequal values work fine at runtime --
+    this test just keeps the local profile intentional. Loosen it
+    deliberately if the two values ever need to diverge."""
     with open(os.path.join(_ROOT, "config", "config.json")) as f:
         config = json.load(f)
     assert int(ENV["FED_MEMBER_COUNT"]) == int(config["num_workers"])

@@ -302,6 +302,10 @@ class KarmadaJobDispatcher:
                     timeout_s=JOB_DELETE_TIMEOUT_S, poll_s=JOB_DELETE_POLL_S,
                 )
                 batch.create_namespaced_job(namespace=spec.namespace, body=manifest)
+                log.info(
+                    f"recreated Job {name} on Karmada after clearing the failed "
+                    f"attempt, targeting member cluster {spec.member_cluster!r}"
+                )
             else:
                 log.info(f"Job {name} already exists on Karmada ({message}); re-attaching")
 
