@@ -1,78 +1,95 @@
-"""The multi-cluster contract is spread across three files that must agree.
+"""Contract tests: infra.env.multi tells fed-infra which clusters to create;
+the multi-cluster pipelines' parameter DEFAULTS decide which clusters the
+Temporal path targets and which host NodePorts member-cluster workers get.
+Nothing but these tests keeps the two in sync (spec 3.4).
 
-infra.env.multi tells fed-infra which member clusters to *create*;
-src/automate_run.py independently decides which member clusters to *talk to*,
-deriving the count from config/config.json's num_workers and hardcoding the
-name prefix and the Karmada kubeconfig path. Nothing but a comment kept the
-three in sync, and a mismatch fails in the worst way available: the clusters
-come up fine, the pipeline submits fine, and workers are addressed on
-clusters that do not exist -- so the run stalls with no error naming the
-cause. These tests make the coupling load-bearing instead of advisory.
+The old version of this file grepped automate_run.py's source for hardcoded
+cluster-name literals; Phase 4 deleted that machinery, so the contract now
+binds the compiled pipelines' defaults instead (active-fed's pattern).
 """
 
 import json
 import os
-import re
+import sys
+
+from google.protobuf import json_format
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
+from src.pipelines.fed_twin_multi_cluster_pipeline import fed_twin_multi_cluster_pipeline
+from src.pipelines.single_twin_multi_cluster_pipeline import (
+    single_twin_multi_cluster_pipeline,
+)
 
 _ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
 
-def _read_env(path):
-    env = {}
-    with open(path) as f:
+def _infra_env_multi() -> dict:
+    values = {}
+    with open(os.path.join(_ROOT, "infra.env.multi")) as f:
         for line in f:
             line = line.strip()
             if line and not line.startswith("#") and "=" in line:
-                key, value = line.split("=", 1)
-                env[key] = value
-    return env
+                key, _, value = line.partition("=")
+                values[key] = value.strip().strip('"')
+    return values
 
 
-def _automate_run_source():
-    with open(os.path.join(_ROOT, "src", "automate_run.py")) as f:
-        return f.read()
+def _pipeline_defaults(pipeline_func) -> dict:
+    spec = json_format.MessageToDict(pipeline_func.pipeline_spec)
+    return {
+        name: param.get("defaultValue")
+        for name, param in spec["root"]["inputDefinitions"]["parameters"].items()
+    }
+
+
+ENV = _infra_env_multi()
+PIPELINES = {
+    "fed_twin_multi_cluster": _pipeline_defaults(fed_twin_multi_cluster_pipeline),
+    "single_twin_multi_cluster": _pipeline_defaults(single_twin_multi_cluster_pipeline),
+}
+
+
+def test_members_default_matches_the_multi_infra_contract():
+    for name, defaults in PIPELINES.items():
+        assert int(defaults["members"]) == int(ENV["FED_MEMBER_COUNT"]), (
+            f"{name}'s members default disagrees with infra.env.multi's "
+            f"FED_MEMBER_COUNT -- workers would round-robin across clusters "
+            f"fed-infra never created"
+        )
+
+
+def test_member_prefix_default_matches_the_multi_infra_contract():
+    for name, defaults in PIPELINES.items():
+        assert defaults["member_prefix"] == ENV["FED_MEMBER_PREFIX"], (
+            f"{name}'s member_prefix default disagrees with infra.env.multi's "
+            f"FED_MEMBER_PREFIX -- every PropagationPolicy would name clusters "
+            f"that do not exist"
+        )
+
+
+def test_nodeport_defaults_match_the_multi_infra_contract():
+    for name, defaults in PIPELINES.items():
+        assert int(defaults["minio_nodeport"]) == int(ENV["FED_NODEPORT_MINIO_API"]), name
+        assert int(defaults["mlflow_nodeport"]) == int(ENV["FED_NODEPORT_MLFLOW"]), name
+
+
+def test_topology_defaults_to_multi():
+    for name, defaults in PIPELINES.items():
+        assert defaults["topology"] == "multi", name
 
 
 def test_member_count_matches_config_num_workers():
-    env = _read_env(os.path.join(_ROOT, "infra.env.multi"))
+    """Kept from the old contract suite: FED_MEMBER_COUNT is maintained by hand
+    to match config.json's num_workers (infra.env.multi's own comment)."""
     with open(os.path.join(_ROOT, "config", "config.json")) as f:
-        cfg = json.load(f)
-    assert int(env["FED_MEMBER_COUNT"]) == int(cfg["num_workers"]), (
-        "infra.env.multi's FED_MEMBER_COUNT (how many member clusters fed-infra "
-        "creates) disagrees with config.json's num_workers (how many members "
-        "automate_run.py builds kubeconfigs for)"
-    )
+        config = json.load(f)
+    assert int(ENV["FED_MEMBER_COUNT"]) == int(config["num_workers"])
 
 
-def test_member_prefix_matches_the_name_automate_run_hardcodes():
-    env = _read_env(os.path.join(_ROOT, "infra.env.multi"))
-    prefix = env["FED_MEMBER_PREFIX"]
-    src = _automate_run_source()
-    assert f"{prefix}{{i}}-control-plane" in src, (
-        f"automate_run.py does not build member names from FED_MEMBER_PREFIX "
-        f"({prefix!r}); the clusters fed-infra creates would not be the ones it "
-        f"addresses"
-    )
-    assert f"kind-{prefix}{{i}}" in src
-
-
-def test_karmada_config_path_matches_the_one_automate_run_reads():
-    env = _read_env(os.path.join(_ROOT, "infra.env.multi"))
-    # infra.env.multi writes it as ${HOME}/...; automate_run.py expands ~/...
-    declared = env["FED_KARMADA_CONFIG"].replace("${HOME}/", "").replace("$HOME/", "")
-    src = _automate_run_source()
-    matches = re.findall(r'os\.path\.expanduser\("~/([^"]+)"\)', src)
-    assert declared in matches, (
-        f"infra.env.multi declares FED_KARMADA_CONFIG={declared!r} but "
-        f"automate_run.py reads {matches!r}"
-    )
-
-
-def test_host_cluster_name_matches_the_one_automate_run_expects():
-    env = _read_env(os.path.join(_ROOT, "infra.env.multi"))
-    host = env["FED_CLUSTER_NAME"]
-    src = _automate_run_source()
-    assert host in src, (
-        f"infra.env.multi's FED_CLUSTER_NAME={host!r} appears nowhere in "
-        f"automate_run.py, which streams logs from the host cluster by name"
-    )
+def test_multi_profile_installs_temporal():
+    """Guards Task 1's infra change: without `temporal` in FED_COMPONENTS the
+    multi profile boots a cluster where every dispatch dies connecting to a
+    Temporal frontend that was never installed (the exact gap Phase 4's
+    pre-design survey found)."""
+    assert "temporal" in ENV["FED_COMPONENTS"].split(",")
