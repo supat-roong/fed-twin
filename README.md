@@ -193,9 +193,9 @@ The project uses **MLflow** for centralized experiment tracking and metric visua
 
 ### 🏛 Unified Tracking Strategy
 We implement a "Single Execution, Single Run" strategy to keep the experiment history clean:
-- **Experiment by Type**: Runs are grouped into experiments based on the pipeline type (e.g., `Fed-Twin-FL`, `Fed-Twin-Single-Visual`).
+- **Experiment by Type**: Runs are grouped into experiments based on the pipeline type (e.g., `Fed-Twin-Single-Cluster`, `Fed-Twin-Multi-Cluster`, `Single-Twin-Visual-Single-Cluster`).
 - **Unified Runs**: Each pipeline execution creates exactly **one** MLflow run. All parallel workers and sequential rounds log to this unique run.
-- **Prefix-Based Metrics**: Metrics are prefixed with worker IDs (e.g., `train-twin-1/reward`, `eval-twin-global/loss`) to distinguish between different sources within the same timeline.
+- **Prefix-Based Metrics**: Metrics are prefixed with worker IDs (e.g., `train-twin-1/train_reward`, `train-twin-1/train_loss`, `eval-twin-global/eval_reward`) to distinguish between different sources within the same timeline.
 
 ### 🖥 Monitoring & Debugging
 
