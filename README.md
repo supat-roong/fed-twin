@@ -220,9 +220,13 @@ Both MLflow and Kubeflow Pipelines (KFP) provide specialized UIs for monitoring.
 - **Tools**: `kubectl`, `python 3.10+`, and `uv`. Multi-cluster mode additionally needs `karmadactl`, `python3`, and `git`; `install_multi_cluster_local.sh` installs `karmadactl` for you if it's missing.
 
 ### 2. Local Setup
-This project consumes the `fed-infra` bootstrap library as a git submodule
-under `vendor/fed-infra`. Initialize it before running setup (needed on a
-first checkout, and again after any pull that bumps the pinned commit):
+This project consumes [fed-infra](https://github.com/supat-roong/fed-infra),
+a reusable cluster-bootstrap library, as a git submodule under
+`vendor/fed-infra`. It provides the `fed-infra-up` / `fed-infra-down` entry
+points that bring up the local kind cluster(s) with Kubeflow Pipelines,
+MLflow, and Temporal (plus Karmada and its dashboard in multi-cluster mode).
+Initialize the submodule before running setup (needed on a first checkout,
+and again after any pull that bumps the pinned commit):
 
 ```bash
 git submodule update --init --recursive
@@ -231,7 +235,10 @@ git submodule update --init --recursive
 Both modes are configured entirely through a consumer contract file at the
 repo root — `infra.env` for single-cluster, `infra.env.multi` for
 multi-cluster — read by `vendor/fed-infra/bin/fed-infra-up`/`fed-infra-down`.
-See `vendor/fed-infra/README.md` for the full variable reference.
+See the fed-infra
+[variable reference](https://github.com/supat-roong/fed-infra/blob/main/docs/variables.md)
+(also checked out locally at `vendor/fed-infra/docs/variables.md`) for the
+full list.
 
 Then setup and deploy the local development clusters using `make`:
 
@@ -273,7 +280,7 @@ make multi-cluster-teardown     # Teardown Multi-Cluster mode
 *   **/pipeline_specs**: Compiled KFP pipeline YAML (generated output).
 *   **/config**: `config.json` — shared runtime defaults such as `num_workers`.
 *   **/docker**: `Dockerfile.app` — the worker/pipeline image (`fed-twin-app:v1`, built via `make build-images`).
-*   **/vendor/fed-infra**: Git submodule providing cluster bootstrap (`fed-infra-up`/`fed-infra-down`), driven by `infra.env` / `infra.env.multi`.
+*   **/vendor/fed-infra**: [fed-infra](https://github.com/supat-roong/fed-infra) git submodule providing cluster bootstrap (`fed-infra-up`/`fed-infra-down`), driven by `infra.env` / `infra.env.multi`.
 *   **/metrics**: Consolidated CSV results from every cluster run.
 *   **/plots**: Generated visualizations showing project performance.
 
